@@ -10,11 +10,9 @@ exports.uploadExcel = async (req, res) => {
     }
   
     try {
-      // Parse the uploaded file and insert data into the DB
       const filePath = path.resolve(file.path);
       await parseAndInsertExcel(filePath);
   
-      // Remove the file after processing
       fs.unlinkSync(filePath);
   
       res.status(200).json({ message: 'File processed and data inserted successfully' });

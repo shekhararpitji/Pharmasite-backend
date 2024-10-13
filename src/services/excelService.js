@@ -1,27 +1,21 @@
 const XLSX = require('xlsx');
 const db = require('../config/db');
 
-// Parse the Excel file and insert data into the respective tables
 exports.parseAndInsertExcel = async (filePath) => {
-  // Read the Excel file
   const workbook = XLSX.readFile(filePath);
-
-  // Get the first sheet (or you can loop through sheets)
   const sheetName = workbook.SheetNames[0];
   const sheet = workbook.Sheets[sheetName];
 
-  // Convert the sheet to JSON
   let data = XLSX.utils.sheet_to_json(sheet);
   data = preprocessFieldNames(data);
 
   console.log(data,"??????????????????????????");
   return
 
-  // Loop through the rows and insert data into respective tables
-  for (const row of data) {
-    const { id, name, email, role } = row; // Assuming these fields exist in your Excel
 
-    // Insert data into the table
+  for (const row of data) {
+    const { id, name, email, role } = row; 
+
     const sql = `
       INSERT INTO users (user_id, username, email, role) 
       VALUES (?, ?, ?, ?)

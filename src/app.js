@@ -4,6 +4,10 @@ const cors= require('cors');
 require("dotenv").config();
 const roleRoutes = require("./routes/roleRoutes");
 const dataRoutes = require("./routes/dataRoutes");
+const syncDb = require('./models/sync.db')
+
+
+syncDb();
 
 const port = process.env.PORT || 8080;
 const app = express();
