@@ -1,11 +1,9 @@
-// const { User } = require("../models");
 const { getUser } = require("../services/roleServies");
 const { validateToken } = require("../utils/authUtil");
 
 exports.authMiddleware = async (req, res, next) => {
   try {
     const decodedToken = validateToken(req);
-    // req.User = await User.findByPk(decodedToken.id);
     next();
   } catch (error) {
     console.error(error);
