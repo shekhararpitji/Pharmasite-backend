@@ -14,7 +14,7 @@ const { isLogedIn, isAdmin } = require("../middlewares/roleMiddleware");
 
 const router = express.Router();
 
-router.post("/register", isLogedIn, isAdmin, validateRegistration, registerCtrl);
+router.post("/register",validateRegistration, isLogedIn, isAdmin, registerCtrl);
 
 router.post("/login", validateLogin, loginCtrl);
 /**
