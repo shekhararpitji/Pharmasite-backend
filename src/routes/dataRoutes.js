@@ -1,6 +1,7 @@
 const express = require("express");
-const upload = require('../config/multer')
+const upload = require('../middlewares/multerMiddleware')
 const { isLogedIn, isAdmin } = require("../middlewares/roleMiddleware");
+const {uploadExcel} = require('../controllers/dataController')
 
 
 const router = express.Router();

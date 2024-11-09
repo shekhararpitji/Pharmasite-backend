@@ -1,7 +1,7 @@
-const multer = require('multer');
-const { uploadExcel } = require("../controllers/dataController");
+// const multer = require('multer');
+// const { uploadExcel } = require("../controllers/dataController");
 
-const upload = multer({ dest: 'uploads/' });
+// const upload = multer({ dest: 'uploads/' });
 
 
-module.exports = upload
+// module.exports = upload

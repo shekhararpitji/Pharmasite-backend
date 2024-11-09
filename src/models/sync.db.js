@@ -1,4 +1,6 @@
-const models = require('./index')
+const ExportModel = require('../models/export.model')
+const ImportModel = require('../models/import.model')
+
 const sequelize = require('../config/db')
 
 const syncDatabase = async () => {

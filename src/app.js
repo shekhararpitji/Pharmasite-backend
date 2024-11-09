@@ -24,8 +24,8 @@ app.use(cors());
 app.use('/api-docs', swaggerUI.serve, swaggerUI.setup(swaggerSpec));
 
 
-app.use("/600/dth/role", roleRoutes);
-app.use("/600/dth/data", dataRoutes);
+app.use("/role", roleRoutes);
+app.use("/data", dataRoutes);
 
 // postmanToOpenApi(
 //     "src/postman/DTH.json",
