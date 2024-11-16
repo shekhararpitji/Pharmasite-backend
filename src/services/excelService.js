@@ -1,4 +1,6 @@
 const ExcelJS = require('exceljs');
+const dayjs = require('dayjs');
+const { Op } = require('sequelize');
 const sequelize = require('../config/db');
 const ExportModel= require('../models/export.model')
 const ImportModel= require('../models/import.model')
@@ -109,7 +111,7 @@ async function batchHandler(batches , model) {
     
     const transaction = await sequelize.transaction();
 
-    const batchPromises = batches.map( batch => {
+      const batchPromises = batches.map( batch => {
       return processBatch(batch, transaction, model)
     })
     
@@ -123,3 +125,57 @@ async function batchHandler(batches , model) {
   }
 
 }
+
+
+exports.getData = async(query) => {
+  const modifiedQuery = queryModifier(query)
+  const model = modifiedQuery.informationOf === 'import'? ImportModel : ExportModel
+  try {
+    const data = await model.findAll({
+      where:{
+        [modifiedQuery.searchType]: modifiedQuery.searchValue,
+        shippingBillDate: {
+          [Op.between]: [modifiedQuery.startDate, modifiedQuery.endDate]
+        }
+      }
+    })
+
+    return data;
+  } catch (error) {
+    throw error
+  }
+};
+
+
+const queryModifier = (query) => {
+  const searchQuery ={};
+
+  let startDate;
+  let endDate;
+
+  if(!query.duration){
+    startDate = dayjs().format('YYYY-MM-DD 00:00:00');
+    endDate = dayjs().subtract(1, 'year').format('YYYY-MM-DD 23:59:59');
+  }else{
+    const dateRange = query.duration.split('-')
+    startDate = dayjs(dateRange[0], 'DD/MM/YYYY').format('YYYY-MM-DD 00:00:00');
+    endDate = dayjs(dateRange[1], 'DD/MM/YYYY').format('YYYY-MM-DD 23:59:59'); 
+  }
+  
+  searchQuery.startDate = startDate;
+  searchQuery.endDate = endDate;
+
+  const searchType = query.searchType
+    .toLowerCase()
+    .split(' ')
+    .map((word, index) => index === 0 ? word : word.charAt(0).toUpperCase() + word.slice(1))
+    .join('');
+
+  searchQuery.searchType = searchType;
+  searchQuery.chapter = query.chapter;
+  searchQuery.searchValue = query.searchValue;
+  searchQuery.informationOf = query.informationOf;
+  searchQuery.dataType = query.dataType;
+
+  return searchQuery;
+};
