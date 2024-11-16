@@ -1,4 +1,5 @@
 const ExcelJS = require('exceljs');
+const fs = require('fs');
 const dayjs = require('dayjs');
 const { Op } = require('sequelize');
 const sequelize = require('../config/db');
@@ -38,12 +39,13 @@ const processExcelFile = async (filePath, model) => {
   let batch = [];
   
   try {
-    const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.readFile(filePath);
-  
-    const worksheet = workbook.getWorksheet(1); 
-    const headers = worksheet.getRow(1).values.slice(1);
-  
+      const workbook = new ExcelJS.Workbook();
+      const stream = fs.createReadStream(filePath);
+      await workbook.xlsx.read(stream);
+      console.log("hi2") 
+      const worksheet = workbook.getWorksheet(1); 
+      const headers = worksheet.getRow(1).values.slice(1);
+    
     
     worksheet.eachRow({ includeEmpty: false }, async (row, rowNumber) => {
 
