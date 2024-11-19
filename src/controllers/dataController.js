@@ -22,9 +22,9 @@ const { parseAndInsertExcel, getData } = require('../services/excelService');
       await parseAndInsertExcel(filePath, type);
   
       fs.unlinkSync(filePath);
-  
       res.status(200).json({ message: 'File processed and data inserted successfully' });
     } catch (err) {
+      fs.unlinkSync(filePath);
       res.status(500).json({ error: err.message });
     }
   };

@@ -106,10 +106,11 @@ async function processBatch(batchObject, transaction, model) {
 
 
 async function batchHandler(batches , model) {
+    let transaction;
   
   try {
     
-    const transaction = await sequelize.transaction();
+     transaction = await sequelize.transaction();
 
       const batchPromises = batches.map( batch => {
       return processBatch(batch, transaction, model)
@@ -120,8 +121,8 @@ async function batchHandler(batches , model) {
 
   } catch (error) {
     console.log(error)
-    throw error
     transaction.rollback()
+    throw error
   }
 
 }
