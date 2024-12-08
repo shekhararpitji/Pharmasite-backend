@@ -14,7 +14,7 @@ exports.registerCtrl = async (req, res) => {
    const user= await registerService(req);
     
    if (user) {
-      const role=user.role;
+      const role = user.role;
     return res.status(201).json({ message: `${role} Registered successfully ..`, });
   }}catch(error){
     res.status(500).json({ error: error.message });

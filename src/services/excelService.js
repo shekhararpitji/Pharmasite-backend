@@ -188,28 +188,28 @@ const getRequiredField =(dataType, informationOf)=>{
 
 
   const fields = [
-    ['shippingBillDate', 'Date of Shipment'],
-    ['H_S_Code', 'HS Code'],
-    ['productDescription', 'Product Description'],
-    ['quantity', 'Quantity'],
-    ['quantityUnit', 'Quantity Units'],
-    ['currency', 'Currency'],
+    ['shippingBillDate', 'dateOfShipment'],
+    ['H_S_Code', 'HS_Code'],
+    ['productDescription', 'productDescription'],
+    ['quantity', 'quantity'],
+    ['quantityUnit', 'quantityUnits'],
+    ['currency', 'currency'],
   ]
   
-  if(dataType === 'cleaned data'){
-    fields.push(['productName', 'Product Name'])
-    fields.push(['CAS_NUmber', 'CAS Number'])
+  if(dataType === 'cleanedData'){
+    fields.push(['productName', 'productName'])
+    fields.push(['CAS_NUmber', 'CAS _Number'])
 
   }
 
   if(informationOf ==='export'){
-    fields.unshift(['portOfOrigin', 'Indian Port'])
-    fields.push(['buyer', 'Foreign Company'])
-    fields.push(['buyerCountry', 'Foreign Country'],)
+    fields.unshift(['portOfOrigin', 'indianPort'])
+    fields.push(['buyer', 'foreignCompany'])
+    fields.push(['buyerCountry', 'foreignCountry'],)
   }else{
-    fields.unshift(['portOfDeparture', 'Indain Port'])
-    fields.push(['supplier', 'Foreign Company'])
-    fields.push(['supplierCountry', 'Foreign Country'],)
+    fields.unshift(['portOfDeparture', 'indainPort'])
+    fields.push(['supplier', 'foreignCompany'])
+    fields.push(['supplierCountry', 'foreignCountry'],)
   }
 
 
