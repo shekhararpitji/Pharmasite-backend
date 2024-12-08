@@ -130,9 +130,11 @@ async function batchHandler(batches , model) {
 
 exports.getData = async(query) => {
   const modifiedQuery = queryModifier(query)
+  const requiredFields = getRequiredField(modifiedQuery.dataType, modifiedQuery.informationOf)
   const model = modifiedQuery.informationOf === 'import'? ImportModel : ExportModel
   try {
     const data = await model.findAll({
+      attributes:requiredFields,
       where:{
         [modifiedQuery.searchType]: modifiedQuery.searchValue,
         shippingBillDate: {
@@ -180,3 +182,38 @@ const queryModifier = (query) => {
 
   return searchQuery;
 };
+
+
+const getRequiredField =(dataType, informationOf)=>{
+
+
+  const fields = [
+    ['shippingBillDate', 'Date of Shipment'],
+    ['H_S_Code', 'HS Code'],
+    ['productDescription', 'Product Description'],
+    ['quantity', 'Quantity'],
+    ['quantityUnit', 'Quantity Units'],
+    ['currency', 'Currency'],
+  ]
+  
+  if(dataType === 'cleaned data'){
+    fields.push(['productName', 'Product Name'])
+    fields.push(['CAS_NUmber', 'CAS Number'])
+
+  }
+
+  if(informationOf ==='export'){
+    fields.unshift(['portOfOrigin', 'Indian Port'])
+    fields.push(['buyer', 'Foreign Company'])
+    fields.push(['buyerCountry', 'Foreign Country'],)
+  }else{
+    fields.unshift(['portOfDeparture', 'Indain Port'])
+    fields.push(['supplier', 'Foreign Company'])
+    fields.push(['supplierCountry', 'Foreign Country'],)
+  }
+
+
+
+  return fields;
+
+}
