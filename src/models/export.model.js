@@ -116,7 +116,7 @@ const ExportModel = sequelize.define('ExportData', {
     allowNull: true,
   },
   totalValueInvoice: {
-    type: DataTypes.DECIMAL(20,2),
+    type: DataTypes.DECIMAL(20, 2),
     allowNull: true,
   },
   freightOnBoardINR: {
@@ -147,9 +147,9 @@ const ExportModel = sequelize.define('ExportData', {
     type: DataTypes.STRING,
     allowNull: true
   },
-  supplierCountry:{
-    type:DataTypes.STRING,
-    allowNull:true
+  supplierCountry: {
+    type: DataTypes.STRING,
+    allowNull: true
   },
   buyer: {
     type: DataTypes.STRING,
@@ -171,10 +171,23 @@ const ExportModel = sequelize.define('ExportData', {
     type: DataTypes.STRING,
     allowNull: true
   },
-  region:{
-    type:DataTypes.STRING,
-    allowNull:true
+  region: {
+    type: DataTypes.STRING,
+    allowNull: true
   }
-});
+},
+{
+  indexes: [
+    {
+      name: 'idx_year',
+      fields: ['year'],
+    },
+    {
+      name: 'idx_fields_filter',
+      fields: ['productName', 'shippingBillDate'],
+    },
+  ],
+}
+);
 
 module.exports = ExportModel;

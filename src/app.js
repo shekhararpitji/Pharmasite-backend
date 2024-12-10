@@ -5,6 +5,7 @@ require("dotenv").config();
 const roleRoutes = require("./routes/roleRoutes");
 const dataRoutes = require("./routes/dataRoutes");
 const syncDb = require('./models/sync.db')
+const cron = require('./crons/search-auto-suggestion')
 
 
 syncDb();

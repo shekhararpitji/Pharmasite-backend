@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const { parseAndInsertExcel, getData } = require('../services/excelService');
+const { parseAndInsertExcel, getData, getSuggestedData } = require('../services/excelService');
 
   exports.uploadExcel = async (req, res) => {
     const file = req.file;
@@ -22,9 +22,9 @@ const { parseAndInsertExcel, getData } = require('../services/excelService');
       await parseAndInsertExcel(filePath, type);
   
       fs.unlinkSync(filePath);
-  
       res.status(200).json({ message: 'File processed and data inserted successfully' });
     } catch (err) {
+      fs.unlinkSync(filePath);
       res.status(500).json({ error: err.message });
     }
   };
@@ -41,6 +41,28 @@ const { parseAndInsertExcel, getData } = require('../services/excelService');
     try {
       const data = await getData(query)
       // console.log(data, 'data====>')
+      res.status(200).json({
+        statusCode:200,
+        data,
+        query
+      });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  };
+
+
+  exports.getSuggestionValue = async (req, res) => {
+    const query = req.query;
+    if(!query.informationOf || !query.chapter || !query.searchType || !query.suggestion){
+      return res.status(400).send({
+        statusCode:400,
+        message:"Provide neccessary fields in search query",
+        query
+      })
+    }
+    try {
+      const data = await getSuggestedData(query)
       res.status(200).json({
         statusCode:200,
         data,
