@@ -2,7 +2,7 @@ const Redis = require('ioredis');
 
 const redis = new Redis({
   host: 'localhost',
-  port: 6375, 
+  port: 6379, 
 });
 
 module.exports = redis;
