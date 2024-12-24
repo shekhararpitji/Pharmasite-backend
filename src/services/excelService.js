@@ -42,11 +42,11 @@ const processExcelFile = async (filePath, model) => {
   try {
     const workbook = new ExcelJS.Workbook();
     const stream = fs.createReadStream(filePath);
-    await workbook.xlsx.read(stream);  
-    const worksheet = workbook.getWorksheet(1); 
+    await workbook.xlsx.read(stream);
+    const worksheet = workbook.getWorksheet(1);
     const headers = worksheet.getRow(1).values.slice(1);
-  
-    
+
+
     worksheet.eachRow({ includeEmpty: false }, async (row, rowNumber) => {
 
       if (rowNumber === 1) return;
@@ -131,7 +131,7 @@ async function batchHandler(batches, model) {
 
 
 exports.getData = async (query) => {
-  
+
   const modifiedQuery = queryModifier(query)
   const requiredFields = getRequiredField(modifiedQuery.dataType, modifiedQuery.informationOf)
   const model = modifiedQuery.informationOf === 'import' ? ImportModel : ExportModel
@@ -143,12 +143,58 @@ exports.getData = async (query) => {
           [Op.in]:modifiedQuery.searchValue
         },
         shippingBillDate: {
-          [Op.between]: [modifiedQuery.startDate, modifiedQuery.endDate]
-        }
-      }
-    })
+          [Op.between]: [modifiedQuery.startDate, modifiedQuery.endDate],
+        },
+      },
+    });
 
-    return data;
+    // Helper function to get grouped data
+    const getGroupedData = async (groupByField, aggregateField, aggregateFunction, limit = 10) => {
+      const result = await model.findAll({
+        attributes: [
+          [Sequelize.col(groupByField), groupByField],
+          [Sequelize.fn(aggregateFunction, Sequelize.col(aggregateField)), 'total'],
+        ],
+        where: {
+          shippingBillDate: {
+            [Op.between]: [modifiedQuery.startDate, modifiedQuery.endDate],
+          },
+        },
+        group: [groupByField],
+        order: [[Sequelize.literal('total'), 'DESC']],
+        limit,
+      });
+
+      return result.map((item) => ({
+        [groupByField]: item.get(groupByField),
+        total: parseFloat(item.get('total')),
+      }));
+    };
+
+    // Fetching metrics
+    const topBuyersByQuantity = await getGroupedData('buyer', 'quantity', 'SUM');
+    const topSuppliersByQuantity = await getGroupedData('supplier', 'quantity', 'SUM');
+    const topCountryByQuantity = await getGroupedData('buyerCountry', 'quantity', 'SUM');
+    const topIndianPortByQuantity = await getGroupedData('portOfOrigin', 'quantity', 'SUM');
+    const topBuyersByValue = await getGroupedData('buyer', 'standardUnitRateINR', 'SUM');
+    const topSuppliersByValue = await getGroupedData('supplier', 'standardUnitRateINR', 'SUM');
+    const topCountryByValue = await getGroupedData('buyerCountry', 'standardUnitRateINR', 'SUM');
+    const topIndianPortByValue = await getGroupedData('portOfOrigin', 'standardUnitRateINR', 'SUM');
+
+    // Returning all data
+    return {
+      data,
+      metrics: {
+        topBuyersByQuantity,
+        topSuppliersByQuantity,
+        topCountryByQuantity,
+        topIndianPortByQuantity,
+        topBuyersByValue,
+        topSuppliersByValue,
+        topCountryByValue,
+        topIndianPortByValue,
+      },
+    };
   } catch (error) {
     console.log(error)
     throw error
@@ -214,8 +260,8 @@ const queryModifier = (query) => {
     .split(' ')
     .map((word, index) => index === 0 ? word : word.charAt(0).toUpperCase() + word.slice(1))
     .join('');
-  const values = query.searchValue && query?.searchValue?.includes(',') 
-    ? query.searchValue.split(',').map(v => v.trim()) 
+  const values = query.searchValue && query?.searchValue?.includes(',')
+    ? query.searchValue.split(',').map(v => v.trim())
     : [query.searchValue]
   searchQuery.searchType = searchType ?? 'productName';
   searchQuery.chapter = query.chapter;
@@ -271,14 +317,14 @@ const getSuggestedFieldsFromCached = (data, searchType, suggestion) => {
   const lowerSuggestion = suggestion.toLowerCase();
 
   for (const item of data) {
-    const fieldValue = item[searchType]?.toLowerCase(); 
+    const fieldValue = item[searchType]?.toLowerCase();
 
     if (fieldValue?.includes(lowerSuggestion) && !requiredFields.includes(item[searchType])) {
       requiredFields.push({id:index++,[searchType]:item[searchType]});
     }
 
     if (requiredFields.length === 20) {
-      break; 
+      break;
     }
   }
 
