@@ -17,19 +17,25 @@ exports.registerCtrl = async (req, res) => {
       const role = user.role;
     return res.status(201).json({ message: `${role} Registered successfully ..`, });
   }}catch(error){
-    res.status(500).json({ error: error.message });
+    return res.status(500).json({ error: error.message });
 }  
 };
 
 exports.loginCtrl = async (req, res) => {
   try {
-    const { access_token } = await loginService(req, res);
-    res.status(200).json({ jwt: access_token });
+    const { access_token, sessionId } = await loginService(req);
+    return res.status(200).json({ token: access_token, sessionId });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: error.message });
-}
+    if (error.message === "User not found") {
+      return res.status(404).json({ message: "User not found" });
+    }
+    if (error.message === "Incorrect password") {
+      return res.status(401).json({ message: "Incorrect password" });
+    }
+    return res.status(500).json({ message: "An internal server error occurred" });
+  }
 };
+
 
 exports.getAllCtrl = async (req, res) => {
   try {

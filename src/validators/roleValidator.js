@@ -9,11 +9,11 @@ const validateRegistration = (req, res, next) => {
       .pattern(/^[a-zA-Z0-9!@#$%^&*()_+\-=[\]{}|\\:;'<>,.?\/]{5,30}$/)
       .required(),
     phone: Joi.string().pattern(/^\d{10}$/),
-    cPassword: Joi.string()
+    confirmPassword: Joi.string()
       .pattern(/^[a-zA-Z0-9!@#$%^&*()_+\-=[\]{}|\\:;'<>,.?\/]{5,30}$/)
       .required(),
-    role: Joi.string(),
-    active: Joi.boolean(),
+    role: Joi.string().optional(),
+    active: Joi.boolean().optional(),
   });
 
   const { error, value } = schema.validate(req.body);
@@ -21,12 +21,8 @@ const validateRegistration = (req, res, next) => {
   if (error) {
     console.error(error);
     return res.status(400).json({ error: error.details[0].message });
-  }else{
-    req.body = value;
-  return next();
   }
-
-  
+    return next();
 };
 
 const validateLogin = (req, res, next) => {
@@ -39,13 +35,12 @@ const validateLogin = (req, res, next) => {
 
   const { error, value } = schema.validate(req.body);
 
-  if (error) {
+  if (error) 
     return res.status(400).json({ error: error.details[0].message });
-  }else{
-    req.body = value;
+  
+ 
   return next();
-  }
-
+  
   
 };
 

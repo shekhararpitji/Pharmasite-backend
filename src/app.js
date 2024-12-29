@@ -25,7 +25,7 @@ app.use(cors());
 app.use('/api-docs', swaggerUI.serve, swaggerUI.setup(swaggerSpec));
 
 
-app.use("/role", roleRoutes);
+app.use("/user", roleRoutes);
 app.use("/data", dataRoutes);
 
 // postmanToOpenApi(

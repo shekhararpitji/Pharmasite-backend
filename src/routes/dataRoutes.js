@@ -5,8 +5,8 @@ const {uploadExcel, getData, getSuggestionValue} = require('../controllers/dataC
 
 
 const router = express.Router();
-router.post('/upload',upload.single('file'), uploadExcel);
-router.get('/records', getData);
+router.post('/upload', isLogedIn, isAdmin, upload.single('file'), uploadExcel);
+router.get('/records', isLogedIn, getData);
 router.get('/suggestion', getSuggestionValue);
 
 

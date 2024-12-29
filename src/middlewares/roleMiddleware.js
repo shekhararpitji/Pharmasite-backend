@@ -12,9 +12,15 @@ exports.authMiddleware = async (req, res, next) => {
 };
 
 exports.isLogedIn = async (req, res, next) => {
-  const jsonPayload = await validateToken(req);
+  const sessionId = req.query?.session ;
+  const token = req.get("authorization")?.split(" ")[1];
+  const jsonPayload = await validateToken(token);
+  
   if (!jsonPayload)
-    return res.status(403).send({ message: "token is invalid" });
+      return res.status(403).send({ message: "token is invalid" });
+
+  if(sessionId !==jsonPayload.sessionId)
+    return res.status(403).send({ message: "Session Expired" });
 
   req.body.data = jsonPayload;
   next();

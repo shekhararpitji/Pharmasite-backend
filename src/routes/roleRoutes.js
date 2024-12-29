@@ -14,23 +14,9 @@ const { isLogedIn, isAdmin } = require("../middlewares/roleMiddleware");
 
 const router = express.Router();
 
-router.post("/register",validateRegistration, isLogedIn, isAdmin, registerCtrl);
+router.post("/register", validateRegistration, isLogedIn, isAdmin, registerCtrl);
 
 router.post("/login", validateLogin, loginCtrl);
-/**
- * @swagger
- * /600/dth/role/get-all:
- *   get:
- *     summary: Get all roles
- *     parameters:
- *       - in: path
- *         schema:
- *           type: string
- *         description: ID of the role
- *     responses:
- *       200:
- *         description: Successful response
- */
 
 router.get("/get-all", isLogedIn, isAdmin, getAllCtrl);
 
