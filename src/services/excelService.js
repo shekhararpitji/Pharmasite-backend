@@ -255,11 +255,16 @@ const queryModifier = (query) => {
   searchQuery.startDate = startDate;
   searchQuery.endDate = endDate;
 
-  const searchType = query.searchType
-    .toLowerCase()
-    .split(' ')
-    .map((word, index) => index === 0 ? word : word.charAt(0).toUpperCase() + word.slice(1))
-    .join('');
+  if(['CAS_Number', 'H_S_Code', '2_Digit_Code'].includes(query.searchType)){
+    searchType = query.searchType
+  }else{
+    searchType = query.searchType
+      .toLowerCase()
+      .split(' ')
+      .map((word, index) => index === 0 ? word : word.charAt(0).toUpperCase() + word.slice(1))
+      .join('');
+  }
+  
   const values = query.searchValue && query?.searchValue?.includes(',')
     ? query.searchValue.split(',').map(v => v.trim())
     : [query.searchValue]
