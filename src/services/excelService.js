@@ -303,7 +303,7 @@ const getRequiredField = (dataType, informationOf) => {
     fields.push(['buyer', 'foreignCompany'])
     fields.push(['buyerCountry', 'foreignCountry'],)
   } else {
-    fields.unshift(['portOfDeparture', 'indainPort'])
+    fields.unshift(['portOfDeparture', 'indianPort'])
     fields.push(['buyer', 'indianCompany'])
     fields.push(['supplier', 'foreignCompany'])
     fields.push(['supplierCountry', 'foreignCountry'],)
