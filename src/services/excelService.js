@@ -136,16 +136,36 @@ exports.getData = async (query) => {
   const requiredFields = getRequiredField(modifiedQuery.dataType, modifiedQuery.informationOf)
   const model = modifiedQuery.informationOf === 'import' ? ImportModel : ExportModel
   try {
+    // const data = await model.findAll({
+    //   attributes: requiredFields,
+    //   where: {
+    //     [modifiedQuery.searchType]:{
+    //       [Op.in]:modifiedQuery.searchValue
+    //     },
+    //     shippingBillDate: {
+    //       [Op.between]: [modifiedQuery.startDate, modifiedQuery.endDate],
+    //     },
+    //   },
+    // });
+
     const data = await model.findAll({
       attributes: requiredFields,
       where: {
-        [modifiedQuery.searchType]:{
-          [Op.in]:modifiedQuery.searchValue
-        },
-        shippingBillDate: {
-          [Op.between]: [modifiedQuery.startDate, modifiedQuery.endDate],
-        },
-      },
+        [Op.and]: [
+          {
+            [modifiedQuery.searchType]: {
+              [Op.or]: modifiedQuery.searchValue.map(value => ({
+                [Op.like]: `%${value}%`
+              }))
+            }
+          },
+          {
+            shippingBillDate: {
+              [Op.between]: [modifiedQuery.startDate, modifiedQuery.endDate],
+            },
+          }
+        ]
+      }
     });
 
     // Helper function to get grouped data
@@ -334,4 +354,26 @@ const getSuggestedFieldsFromCached = (data, searchType, suggestion) => {
   }
 
   return requiredFields;
+};
+exports.getHSCodes = async (query) => {
+  const model = query.informationOf === 'import' ? ImportModel : ExportModel;
+  
+  try {
+    const data = await model.findAll({
+      attributes: [
+        [Sequelize.fn('DISTINCT', Sequelize.fn('SUBSTRING', Sequelize.col('H_S_Code'), 1, 2)), 'code']
+      ],
+      where: {
+        H_S_Code: {
+          [Op.not]: null
+        }
+      },
+      order: [[Sequelize.literal('code'), 'ASC']]
+    });
+
+    return data.map(item => item.get('code'));
+  } catch (error) {
+    console.log(error);
+    throw error;
+  }
 };
