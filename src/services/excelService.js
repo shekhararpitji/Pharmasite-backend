@@ -305,9 +305,9 @@ const getRequiredField = (dataType, informationOf) => {
     ['shippingBillDate', 'dateOfShipment'],
     ['H_S_Code', 'HS_Code'],
     ['productDescription', 'productDescription'],
-    ['quantity', 'quantity'],
+    ['standardQuantity', 'quantity'],
     ['quantityUnit', 'quantityUnits'],
-    ['standardUnitRateINR', 'unitPrice'],
+    ['standardUnitRateUSD', 'unitPrice'],
     ['currency', 'currency'],
   ]
 
