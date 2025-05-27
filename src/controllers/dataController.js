@@ -31,13 +31,13 @@ const { parseAndInsertExcel, getData, getSuggestedData, getHSCodes } = require('
 
   exports.getData = async (req, res) => {
     const query = req.query;
-    if(!query.informationOf || !query.dataType || !query.chapter || !query.searchType || !query.searchValue){
-      return res.status(400).send({
-        statusCode:400,
-        message:"Provide neccessary fields in search query",
-        query
-      })
-    }
+    // if(!query.informationOf || !query.dataType || !query.chapter || !query.searchType || !query.searchValue){
+    //   return res.status(400).send({
+    //     statusCode:400,
+    //     message:"Provide neccessary fields in search query",
+    //     query
+    //   })
+    // }
     try {
       const data = await getData(query)
       // console.log(data, 'data====>')

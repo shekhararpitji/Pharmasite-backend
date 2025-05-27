@@ -8,7 +8,6 @@ const ImportModel = require('../models/import.model')
 const redis = require('../config/chached-config')
 
 exports.parseAndInsertExcel = async (filePath, type) => {
-
   try {
     if (type === 'export') {
       await processExcelFile(filePath, ExportModel);
@@ -32,103 +31,125 @@ const preprocessFieldNames = (data) => {
   });
 };
 
-
-
 const processExcelFile = async (filePath, model) => {
-  const batchSize = 1000;
-  const batches = [];
+  console.log('Starting Excel processing...');
+  const batchSize = 500;
   let batch = [];
+  let headers = [];
+  let rowCount = 0;
+  let transaction;
 
   try {
-    const workbook = new ExcelJS.Workbook();
-    const stream = fs.createReadStream(filePath);
-    await workbook.xlsx.read(stream);
-    const worksheet = workbook.getWorksheet(1);
-    const headers = worksheet.getRow(1).values.slice(1);
+    transaction = await sequelize.transaction();
+    console.log('Transaction created');
 
-
-    worksheet.eachRow({ includeEmpty: false }, async (row, rowNumber) => {
-
-      if (rowNumber === 1) return;
-
-      const rowData = {};
-
-
-      row.eachCell({ includeEmpty: false }, (cell, colNumber) => {
-
-
-        if (['2_Digit_Code', '4_Digit_Code'].includes(headers[colNumber - 1])) {
-          return
-        }
-
-        if (headers[colNumber - 1] === 'yearMonth') {
-          const value = cell.value.split(`'-`)[0]
-          rowData[headers[colNumber - 1]] = cell.value;
-          rowData["year"] = value;
-        } else if (cell.value === '--') {
-          rowData[headers[colNumber - 1]] = null
-        } else {
-          rowData[headers[colNumber - 1]] = cell.value;
-        }
-
+    return new Promise((resolve, reject) => {
+      const workbook = new ExcelJS.Workbook();
+      const stream = fs.createReadStream(filePath);
+      
+      console.log('Reading Excel file...');
+      
+      stream.on('error', (err) => {
+        console.error('Stream error:', err);
+        if (transaction) transaction.rollback();
+        reject(err);
       });
+      
+      workbook.xlsx.read(stream)
+        .then(async () => {
+          try {
+            console.log('Excel file loaded, processing data...');
+            const worksheet = workbook.getWorksheet(1);
+            
+            if (!worksheet) {
+              throw new Error('Worksheet not found');
+            }
+            
+            headers = worksheet.getRow(1).values.slice(1);
+            console.log(`Found ${headers.length} columns in header row`);
 
-      batch.push(rowData);
+            for (let rowNumber = 2; rowNumber <= worksheet.rowCount; rowNumber++) {
+              const row = worksheet.getRow(rowNumber);
+              if (!row.hasValues) continue;
+              
+              rowCount++;
+              const rowData = {};
+              
+              row.eachCell({ includeEmpty: false }, (cell, colNumber) => {
+                if (['2_Digit_Code', '4_Digit_Code'].includes(headers[colNumber - 1])) {
+                  return;
+                }
 
-      if (batch.length === batchSize) {
-        batches.push(batch)
-        batch = [];
-        return;
-      }
+                if (headers[colNumber - 1] === 'yearMonth') {
+                  const value = cell.value.split(`'-`)[0];
+                  rowData[headers[colNumber - 1]] = cell.value;
+                  rowData["year"] = value;
+                } else if (cell.value === '--') {
+                  rowData[headers[colNumber - 1]] = null;
+                } else {
+                  rowData[headers[colNumber - 1]] = cell.value;
+                }
+              });
 
+              if (Object.keys(rowData).length > 0) {
+                batch.push(rowData);
+              }
+
+              if (batch.length >= batchSize) {
+                try {
+                  await processBatch(batch, transaction, model);
+                  console.log(`Processed ${rowCount} rows`);
+                  batch = [];
+                } catch (error) {
+                  console.error('Error processing batch:', error);
+                  throw error;
+                }
+              }
+            }
+            
+            if (batch.length > 0) {
+              try {
+                await processBatch(batch, transaction, model);
+                console.log(`Processed ${rowCount} rows total`);
+              } catch (error) {
+                console.error('Error processing final batch:', error);
+                throw error;
+              }
+            }
+            
+            await transaction.commit();
+            console.log('Data inserted successfully!');
+            resolve();
+          } catch (error) {
+            if (transaction) await transaction.rollback();
+            console.error('Error during worksheet processing:', error);
+            reject(error);
+          }
+        })
+        .catch(async (error) => {
+          if (transaction) await transaction.rollback();
+          console.error('Error reading Excel file:', error);
+          reject(error);
+        });
     });
-
-    if (batch.length > 0) {
-      batches.push(batch)
-    }
-
-    await batchHandler(batches, model)
-    console.log('Data inserted successfully!');
-
   } catch (error) {
-    console.error('Error processing the Excel file:', error);
-    throw error
+    if (transaction) await transaction.rollback();
+    console.error('Setup error:', error);
+    throw error;
   }
 };
 
-
 async function processBatch(batchObject, transaction, model) {
   try {
-    await model.bulkCreate(batchObject, { transaction });
+    console.log(`Inserting batch of ${batchObject.length} records...`);
+    const result = await model.bulkCreate(batchObject, { transaction });
+    console.log(`Successfully inserted ${result.length} records`);
+    return result;
   } catch (error) {
     console.error('Error processing batch:', error);
     throw error;
   }
 }
-
-
-async function batchHandler(batches, model) {
-  let transaction;
-
-  try {
-
-    transaction = await sequelize.transaction();
-
-    const batchPromises = batches.map(batch => {
-      return processBatch(batch, transaction, model)
-    })
-
-    await Promise.all(batchPromises)
-    transaction.commit()
-
-  } catch (error) {
-    console.log(error)
-    transaction.rollback()
-    throw error
-  }
-
-}
-
 
 exports.getData = async (query) => {
 
@@ -234,13 +255,12 @@ exports.getSuggestedData = async (query) => {
       cachedData = await redis.get('export_suggested_data');
 
     }
-
-    if (cachedData) {
+    if (!cachedData) {
       data = getSuggestedFieldsFromCached(JSON.parse(cachedData), modifiedQuery.searchType,query.suggestion );
     } else {
       data = await model.findAll({
         attributes: [
-          [Sequelize.fn('DISTINCT', Sequelize.col(modifiedQuery.searchType)), modifiedQuery.searchType],
+          [Sequelize.fn('DISTINCT', Sequelize.col(modifiedQuery.searchType)),'title'],
         ],
         where: {
           [modifiedQuery.searchType]: {
@@ -309,6 +329,7 @@ const getRequiredField = (dataType, informationOf) => {
     ['quantityUnit', 'quantityUnits'],
     ['standardUnitRateUSD', 'unitPrice'],
     ['currency', 'currency'],
+    ['region', 'region']
   ]
 
   if (dataType === 'cleaned data') {
@@ -345,7 +366,7 @@ const getSuggestedFieldsFromCached = (data, searchType, suggestion) => {
     const fieldValue = item[searchType]?.toLowerCase();
 
     if (fieldValue?.includes(lowerSuggestion) && !requiredFields.includes(item[searchType])) {
-      requiredFields.push({id:index++,[searchType]:item[searchType]});
+      requiredFields.push({id:index++,['title']:item[searchType]});
     }
 
     if (requiredFields.length === 20) {

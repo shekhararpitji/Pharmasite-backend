@@ -1,4 +1,5 @@
 const JWT = require("jsonwebtoken");
+require("dotenv").config();
 exports.createToken = (user) => {
   console.log(user, '+++++')
   const payload = {
