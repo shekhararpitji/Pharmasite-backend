@@ -35,7 +35,7 @@ const calculateNotificationDates = (endDate, subscriptionDuration) => {
   } else {
     notificationDate.setDate(notificationDate.getDate() - 15); // 15 days before
   }
-  return notificationDate;
+  return notificationDate.toString();
 };
 
 exports.getAllSubscriptions = async (req, res) => {
