@@ -152,7 +152,7 @@ async function processBatch(batchObject, transaction, model) {
 }
 
 exports.getData = async (query) => {
-
+console.log("hello")
   const modifiedQuery = queryModifier(query)
   const requiredFields = getRequiredField(modifiedQuery.dataType, modifiedQuery.informationOf)
   const model = modifiedQuery.informationOf === 'import' ? ImportModel : ExportModel
@@ -168,7 +168,7 @@ exports.getData = async (query) => {
     //     },
     //   },
     // });
-
+console.log("find")
     const data = await model.findAll({
       attributes: requiredFields,
       where: {
@@ -188,7 +188,7 @@ exports.getData = async (query) => {
         ]
       }
     });
-
+console.log(data.length)
     // Helper function to get grouped data
     const getGroupedData = async (groupByField, aggregateField, aggregateFunction, limit = 10) => {
       const result = await model.findAll({
@@ -213,28 +213,28 @@ exports.getData = async (query) => {
     };
 
     // Fetching metrics
-    const topBuyersByQuantity = await getGroupedData('buyer', 'quantity', 'SUM');
-    const topSuppliersByQuantity = await getGroupedData('supplier', 'quantity', 'SUM');
-    const topCountryByQuantity = await getGroupedData('buyerCountry', 'quantity', 'SUM');
-    const topIndianPortByQuantity = await getGroupedData('portOfOrigin', 'quantity', 'SUM');
-    const topBuyersByValue = await getGroupedData('buyer', 'standardUnitRateINR', 'SUM');
-    const topSuppliersByValue = await getGroupedData('supplier', 'standardUnitRateINR', 'SUM');
-    const topCountryByValue = await getGroupedData('buyerCountry', 'standardUnitRateINR', 'SUM');
-    const topIndianPortByValue = await getGroupedData('portOfOrigin', 'standardUnitRateINR', 'SUM');
-
+    // const topBuyersByQuantity = await getGroupedData('buyer', 'quantity', 'SUM');
+    // const topSuppliersByQuantity = await getGroupedData('supplier', 'quantity', 'SUM');
+    // const topCountryByQuantity = await getGroupedData('buyerCountry', 'quantity', 'SUM');
+    // const topIndianPortByQuantity = await getGroupedData('portOfOrigin', 'quantity', 'SUM');
+    // const topBuyersByValue = await getGroupedData('buyer', 'standardUnitRateINR', 'SUM');
+    // const topSuppliersByValue = await getGroupedData('supplier', 'standardUnitRateINR', 'SUM');
+    // const topCountryByValue = await getGroupedData('buyerCountry', 'standardUnitRateINR', 'SUM');
+    // const topIndianPortByValue = await getGroupedData('portOfOrigin', 'standardUnitRateINR', 'SUM');
+console.log("last")
     // Returning all data
     return {
       data,
-      metrics: {
-        topBuyersByQuantity,
-        topSuppliersByQuantity,
-        topCountryByQuantity,
-        topIndianPortByQuantity,
-        topBuyersByValue,
-        topSuppliersByValue,
-        topCountryByValue,
-        topIndianPortByValue,
-      },
+      // metrics: {
+      //   topBuyersByQuantity,
+      //   topSuppliersByQuantity,
+      //   topCountryByQuantity,
+      //   topIndianPortByQuantity,
+      //   topBuyersByValue,
+      //   topSuppliersByValue,
+      //   topCountryByValue,
+      //   topIndianPortByValue,
+      // },
     };
   } catch (error) {
     console.log(error)
@@ -313,7 +313,7 @@ const queryModifier = (query) => {
   searchQuery.searchValue = values;
   searchQuery.informationOf = query.informationOf;
   searchQuery.dataType = query?.dataType ?? 'raw data';
-
+console.log("searching Query")
   return searchQuery;
 };
 

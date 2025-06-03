@@ -1,7 +1,5 @@
 const JWT = require("jsonwebtoken");
-require("dotenv").config();
 exports.createToken = (user) => {
-  console.log(user, '+++++')
   const payload = {
     id: user.id,
     email: user.email,
@@ -9,13 +7,13 @@ exports.createToken = (user) => {
     sessionId:user.sessionId,
     role: user.role
   };
-  const token = JWT.sign(payload, process.env.SECRET);
+  const token = JWT.sign(payload, "klhdhsd&jigisd6$jhds#uds");
   return token;
 };
 
 exports.validateToken = async (token) => {
     try{      
-      const payload = JWT.verify(token, process.env.SECRET);
+      const payload = JWT.verify(token, "klhdhsd&jigisd6$jhds#uds");
   if(!payload){
     throw new Error('Authorization Failed');
   }

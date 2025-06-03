@@ -1,15 +1,20 @@
 const express = require("express");
 const upload = require('../middlewares/multerMiddleware')
-const { isLogedIn, isAdmin } = require("../middlewares/roleMiddleware");
-const {uploadExcel, getData, getSuggestionValue,getHSCodes} = require('../controllers/dataController')
+const { isLogedIn, isAdmin, isParent, hasActiveSubscription } = require("../middlewares/roleMiddleware");
+const {uploadExcel, getData, getSuggestionValue, getHSCodes, downloadData} = require('../controllers/dataController')
 
 
 const router = express.Router();
-router.post('/upload', upload.single('file'), uploadExcel);
+
+// Admin-only routes
+router.post('/upload', isAdmin, upload.single('file'), uploadExcel);
+
+// Parent and admin routes (premium features)
+router.get('/download', isParent, hasActiveSubscription, downloadData);
+
+// Basic authenticated routes (available to all authenticated users)
 router.get('/records', isLogedIn, getData);
-router.get('/suggestion', getSuggestionValue);
-router.post('/hscodes', getHSCodes);
-
-
+router.get('/suggestion', isLogedIn, getSuggestionValue);
+router.post('/hscodes', isLogedIn, getHSCodes);
 
 module.exports = router;

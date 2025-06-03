@@ -1,41 +1,63 @@
+const express = require('express');
+const cors = require('cors');
+const dotenv = require('dotenv');
+const syncDatabase = require('./config/syncModels');
 const bodyParser = require("body-parser");
-const express = require("express");
-const cors= require('cors');
-require("dotenv").config();
 const roleRoutes = require("./routes/roleRoutes");
 const dataRoutes = require("./routes/dataRoutes");
+const subscriptionRoutes = require("./routes/subscriptionRoutes");
 const syncDb = require('./models/sync.db')
-const cron = require('./crons/search-auto-suggestion')
+const cron = require('./crons/search-auto-suggestion');
+const cookieParser = require('cookie-parser');
 
+// Load environment variables
+dotenv.config();
 
-syncDb();
-
-const port = process.env.PORT || 8080;
+// Create Express app
 const app = express();
 
-const postmanToOpenApi= require('postman-to-openapi');
-const path = require("path");
-const YAML = require('yamljs');
-const swaggerUI = require('swagger-ui-express');
-const swaggerSpec = require('./swagger');
-app.use(bodyParser.json());
-
+// Middleware
+app.use(cors({
+    origin:  'http://65.1.119.54:3000', // Exact frontend origin
+    credentials: true, // Allow cookies
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'], // Allowed methods
+    allowedHeaders: ['Content-Type', 'Authorization', 'Session-ID'], // Allowed headers
+  }));
 app.use(express.json());
-app.use(cors());
-app.use('/api-docs', swaggerUI.serve, swaggerUI.setup(swaggerSpec));
+app.use(cookieParser());
+app.use(express.urlencoded({ extended: true }));
 
+// Routes
+app.use('/api/roles', roleRoutes);
+app.use("/api/data", dataRoutes);
+app.use("/api/subscriptions", subscriptionRoutes);
 
-app.use("/user", roleRoutes);
-app.use("/data", dataRoutes);
+// Error handling middleware
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  res.status(500).json({
+    statusCode: 500,
+    message: 'Something went wrong!',
+    error: process.env.NODE_ENV === 'development' ? err.message : undefined
+  });
+});
 
-// postmanToOpenApi(
-//     "src/postman/DTH.json",
-//     path.join("src/postman/swagger.yml"),
-//     {defaultTags:"General"}
-// ).then((response)=>{
-//     let result=YAML.load("src/postman/swagger.yml");
-//     result.servers[0].url="/";
-//     app.use("/swagger",swaggerUi.serve, swaggerUi.setup(result));
-// })
+// Start server
+const PORT = process.env.PORT || 8080;
 
-app.listen(port, () => console.log(`Server is running on port ${port}`));
+// Sync database and start server
+const startServer = async () => {
+  try {
+    // Sync database (set force: true to reset database)
+    await syncDatabase(false);
+
+    app.listen(PORT, () => {
+      console.log(`Server is running on port ${PORT}`);
+    });
+  } catch (error) {
+    console.error('Failed to start server:', error);
+    process.exit(1);
+  }
+};
+
+startServer();
