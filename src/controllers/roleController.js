@@ -27,7 +27,7 @@ const { sendAccountCreationNotification, sendAccessUpdateNotification } = requir
 exports.registerCtrl = async (req, res) => {
   try {
     const user = await createUser(req.body, req.user.id);
-    await sendAccountCreationNotification(user.email, req.user.name, user.role);
+    // await sendAccountCreationNotification(user.email, req.user.name, user.role);
     
     return res.status(201).json({
       statusCode: 201,
@@ -56,7 +56,7 @@ exports.createChildUserCtrl = async (req, res) => {
     };
 
     const user = await createUser(userData, req.user.id);
-    await sendAccountCreationNotification(user.email, req.user.name, user.role);
+    // await sendAccountCreationNotification(user.email, req.user.name, user.role);
     
     return res.status(201).json({
       statusCode: 201,

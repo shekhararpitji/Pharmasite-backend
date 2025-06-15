@@ -16,7 +16,7 @@ exports.sendVerificationEmail = async (email, token) => {
   const verificationUrl = `${process.env.FRONTEND_URL}/verify-email?token=${token}`;
   
   const mailOptions = {
-    from: process.env.SMTP_FROM,
+    from: process.env.EMAIL_USER,
     to: email,
     subject: 'Verify Your Email Address',
     html: `

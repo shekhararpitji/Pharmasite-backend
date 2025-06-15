@@ -42,7 +42,7 @@ exports.createUser = async (userData, adminId) => {
   });
 
   // Send verification email
-  await sendVerificationEmail(user.email, token);
+  // await sendVerificationEmail(user.email, token);
 
   return user;
 };
