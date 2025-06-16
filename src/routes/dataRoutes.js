@@ -1,8 +1,8 @@
 const express = require("express");
 const upload = require('../middlewares/multerMiddleware')
 const { isLogedIn, isAdmin, isParent, hasActiveSubscription } = require("../middlewares/roleMiddleware");
-const {uploadExcel, getData, getSuggestionValue, getHSCodes, downloadData, getDataFiltered} = require('../controllers/dataController');
-const { getDataMetrics } = require("../services/excelService");
+const {uploadExcel, getSuggestionValue, getHSCodes, downloadData} = require('../controllers/dataController');
+const { getDataMetrics, getData } = require("../services/excelService");
 
 
 const router = express.Router();

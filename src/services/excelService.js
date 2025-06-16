@@ -151,7 +151,8 @@ async function processBatch(batchObject, transaction, model) {
   }
 }
 
-exports.getData = async (query) => {
+exports.getData = async (req, res) => {
+  const query = req.body
   console.log("hello");
   const modifiedQuery = queryModifier(query);
   const requiredFields = getRequiredField(modifiedQuery.dataType, modifiedQuery.informationOf);
@@ -220,13 +221,14 @@ exports.getData = async (query) => {
     console.log(data.length);
     console.log("last");
 
-    return {
-      data
-    };
+    return res.status(200).json({
+      statusCode: 200,
+      data,
+      query
+    });
 
   } catch (error) {
-    console.log(error);
-    throw error;
+    res.status(500).json({ error: err.message });
   }
 };
 
@@ -430,9 +432,7 @@ const queryModifier = (query) => {
       .join('');
   }
   
-  const values = query.searchValue && query?.searchValue?.includes(',')
-    ? query.searchValue.split(',').map(v => v.trim())
-    : [query.searchValue]
+  const values = query.searchValue 
   searchQuery.searchType = searchType ?? 'productName';
   searchQuery.chapter = query.chapter;
   searchQuery.searchValue = values;

@@ -30,20 +30,6 @@ exports.uploadExcel = async (req, res) => {
   }
 };
 
-exports.getData = async (req, res) => {
-  const query = req.body;
-
-  try {
-    const data = await getData(query);
-    res.status(200).json({
-      statusCode: 200,
-      data,
-      query
-    });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-};
 
 
 exports.getSuggestionValue = async (req, res) => {
