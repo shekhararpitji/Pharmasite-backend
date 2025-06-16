@@ -248,9 +248,30 @@ exports.getDecodedUser = async (req, res, next) => {
     }
     
     const decoded = jwt.verify(token, 'klhdhsd&jigisd6$jhds#uds');
-   return res.status(200).json({
+    
+    // Get the latest user data from database
+    const user = await UserModel.findByPk(decoded.id);
+    if (!user) {
+      return res.status(404).json({
+        statusCode: 404,
+        message: 'User not found'
+      });
+    }
+
+    return res.status(200).json({
       statusCode: 200,
-      data: decoded
+      message: 'User data retrieved successfully',
+      data: {
+        token,
+        sessionId: decoded.sessionId,
+        user: {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+          partyName: user.partyName
+        }
+      }
     });
   } catch (error) {
     return res.status(401).json({

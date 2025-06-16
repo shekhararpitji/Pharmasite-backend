@@ -190,6 +190,29 @@ console.log("find")
     });
 console.log(data.length)
     // Helper function to get grouped data
+  
+console.log("last")
+    // Returning all data
+    return {
+      data
+    };
+  } catch (error) {
+    console.log(error)
+    throw error
+  }
+};
+
+exports.getDataMetrics = async (req,res) => {
+console.log("hello")
+  const query = req.query;
+  const modifiedQuery = queryModifier(query)
+  // const requiredFields = getRequiredField(modifiedQuery.dataType, modifiedQuery.informationOf)
+  const model = modifiedQuery.informationOf === 'import' ? ImportModel : ExportModel
+  try {
+   
+console.log("find")
+    
+    // Helper function to get grouped data
     const getGroupedData = async (groupByField, aggregateField, aggregateFunction, limit = 10) => {
       const result = await model.findAll({
         attributes: [
@@ -197,9 +220,20 @@ console.log(data.length)
           [Sequelize.fn(aggregateFunction, Sequelize.col(aggregateField)), 'total'],
         ],
         where: {
-          shippingBillDate: {
-            [Op.between]: [modifiedQuery.startDate, modifiedQuery.endDate],
+          [Op.and]: [
+          {
+            [modifiedQuery.searchType]: {
+              [Op.or]: modifiedQuery.searchValue.map(value => ({
+                [Op.like]: `%${value}%`
+              }))
+            }
           },
+          {
+            shippingBillDate: {
+              [Op.between]: [modifiedQuery.startDate, modifiedQuery.endDate],
+            },
+          }
+        ]
         },
         group: [groupByField],
         order: [[Sequelize.literal('total'), 'DESC']],
@@ -213,28 +247,32 @@ console.log(data.length)
     };
 
     // Fetching metrics
-    // const topBuyersByQuantity = await getGroupedData('buyer', 'quantity', 'SUM');
-    // const topSuppliersByQuantity = await getGroupedData('supplier', 'quantity', 'SUM');
-    // const topCountryByQuantity = await getGroupedData('buyerCountry', 'quantity', 'SUM');
-    // const topIndianPortByQuantity = await getGroupedData('portOfOrigin', 'quantity', 'SUM');
-    // const topBuyersByValue = await getGroupedData('buyer', 'standardUnitRateINR', 'SUM');
-    // const topSuppliersByValue = await getGroupedData('supplier', 'standardUnitRateINR', 'SUM');
-    // const topCountryByValue = await getGroupedData('buyerCountry', 'standardUnitRateINR', 'SUM');
-    // const topIndianPortByValue = await getGroupedData('portOfOrigin', 'standardUnitRateINR', 'SUM');
+    const topBuyersByQuantity = await getGroupedData('buyer', 'quantity', 'SUM');
+    const topSuppliersByQuantity = await getGroupedData('supplier', 'quantity', 'SUM');
+    const topCountryByQuantity = await getGroupedData('buyerCountry', 'quantity', 'SUM');
+    const topIndianPortByQuantity = await getGroupedData('portOfOrigin', 'quantity', 'SUM');
+    const topBuyersByValue = await getGroupedData('buyer', 'standardUnitRateINR', 'SUM');
+    const topSuppliersByValue = await getGroupedData('supplier', 'standardUnitRateINR', 'SUM');
+    const topCountryByValue = await getGroupedData('buyerCountry', 'standardUnitRateINR', 'SUM');
+    const topIndianPortByValue = await getGroupedData('portOfOrigin', 'standardUnitRateINR', 'SUM');
 console.log("last")
+const metrics= {
+        topBuyersByQuantity,
+        topSuppliersByQuantity,
+        topCountryByQuantity,
+        topIndianPortByQuantity,
+        topBuyersByValue,
+        topSuppliersByValue,
+        topCountryByValue,
+        topIndianPortByValue,
+      };
     // Returning all data
-    return {
-      data,
-      // metrics: {
-      //   topBuyersByQuantity,
-      //   topSuppliersByQuantity,
-      //   topCountryByQuantity,
-      //   topIndianPortByQuantity,
-      //   topBuyersByValue,
-      //   topSuppliersByValue,
-      //   topCountryByValue,
-      //   topIndianPortByValue,
-      // },
+    return res.status(200).json({
+        statusCode:200,
+        metrics,
+        query
+      });{
+      
     };
   } catch (error) {
     console.log(error)
