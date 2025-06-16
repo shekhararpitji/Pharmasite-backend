@@ -23,6 +23,7 @@ const {
   exportUserData
 } = require('../services/userService');
 const { sendAccountCreationNotification, sendAccessUpdateNotification } = require('../utils/emailUtil');
+const UserModel = require("../models/user.model");
 
 exports.registerCtrl = async (req, res) => {
   try {

@@ -152,131 +152,218 @@ async function processBatch(batchObject, transaction, model) {
 }
 
 exports.getData = async (query) => {
-console.log("hello")
-  const modifiedQuery = queryModifier(query)
-  const requiredFields = getRequiredField(modifiedQuery.dataType, modifiedQuery.informationOf)
-  const model = modifiedQuery.informationOf === 'import' ? ImportModel : ExportModel
+  console.log("hello");
+  const modifiedQuery = queryModifier(query);
+  const requiredFields = getRequiredField(modifiedQuery.dataType, modifiedQuery.informationOf);
+  const model = modifiedQuery.informationOf === 'import' ? ImportModel : ExportModel;
+
   try {
-    // const data = await model.findAll({
-    //   attributes: requiredFields,
-    //   where: {
-    //     [modifiedQuery.searchType]:{
-    //       [Op.in]:modifiedQuery.searchValue
-    //     },
-    //     shippingBillDate: {
-    //       [Op.between]: [modifiedQuery.startDate, modifiedQuery.endDate],
-    //     },
-    //   },
-    // });
-console.log("find")
+    console.log("find");
+
+    // Build the base 'where' clause
+    const whereClause = {
+      [Op.and]: [
+        {
+          [modifiedQuery.searchType]: {
+            [Op.or]: modifiedQuery.searchValue.map(value => ({
+              [Op.like]: `%${value}%`
+            }))
+          }
+        },
+        {
+          shippingBillDate: {
+            [Op.between]: [modifiedQuery.startDate, modifiedQuery.endDate],
+          },
+        }
+      ]
+    };
+
+    // Add filters using actual database column names, not aliases
+    if (query.filters && typeof query.filters === 'object') {
+      for (const [field, values] of Object.entries(query.filters)) {
+        if (Array.isArray(values) && values.length > 0) {
+          // Map the field name to the actual database column name
+          let dbColumnName = field;
+          
+          // Add mappings for fields that have different names in database vs frontend
+          const fieldMappings = {
+            'indianPort': 'portOfOrigin',
+            'dateOfShipment': 'shippingBillDate',
+            'HS_Code': 'H_S_Code',
+            'quantity': 'standardQuantity',
+            'quantityUnits': 'quantityUnit',
+            'unitPrice': 'standardUnitRateUSD',
+            'indianCompany': 'supplier',
+            'foreignCompany': 'buyer',
+            'foreignCountry': 'buyerCountry'
+          };
+          
+          // Use the mapped column name if it exists, otherwise use the original field name
+          if (fieldMappings[field]) {
+            dbColumnName = fieldMappings[field];
+          }
+          
+          whereClause[Op.and].push({
+            [dbColumnName]: {
+              [Op.in]: values
+            }
+          });
+        }
+      }
+    }
+
     const data = await model.findAll({
       attributes: requiredFields,
-      where: {
-        [Op.and]: [
-          {
-            [modifiedQuery.searchType]: {
-              [Op.or]: modifiedQuery.searchValue.map(value => ({
-                [Op.like]: `%${value}%`
-              }))
-            }
-          },
-          {
-            shippingBillDate: {
-              [Op.between]: [modifiedQuery.startDate, modifiedQuery.endDate],
-            },
-          }
-        ]
-      }
+      where: whereClause
     });
-console.log(data.length)
-    // Helper function to get grouped data
-  
-console.log("last")
-    // Returning all data
+
+    console.log(data.length);
+    console.log("last");
+
     return {
       data
     };
+
   } catch (error) {
-    console.log(error)
-    throw error
+    console.log(error);
+    throw error;
   }
 };
 
-exports.getDataMetrics = async (req,res) => {
-console.log("hello")
-  const query = req.query;
-  const modifiedQuery = queryModifier(query)
-  // const requiredFields = getRequiredField(modifiedQuery.dataType, modifiedQuery.informationOf)
-  const model = modifiedQuery.informationOf === 'import' ? ImportModel : ExportModel
+exports.getDataMetrics = async (req, res) => {
+  const query = req.body;
+  const modifiedQuery = queryModifier(query);
+  const model = modifiedQuery.informationOf === 'import' ? ImportModel : ExportModel;
+
   try {
-   
-console.log("find")
-    
-    // Helper function to get grouped data
-    const getGroupedData = async (groupByField, aggregateField, aggregateFunction, limit = 10) => {
-      const result = await model.findAll({
+    // Pre-build the base where clause once
+    const baseWhere = {
+      [Op.and]: [
+        {
+          [modifiedQuery.searchType]: {
+            [Op.or]: modifiedQuery.searchValue.map(value => ({
+              [Op.like]: `%${value}%`
+            }))
+          }
+        },
+        {
+          shippingBillDate: {
+            [Op.between]: [modifiedQuery.startDate, modifiedQuery.endDate],
+          }
+        }
+      ]
+    };
+
+    // Optimized metric configurations with better grouping
+    const metricsByField = {
+      quantity: [
+        { key: 'topBuyersByQuantity', groupBy: 'buyer' },
+        { key: 'topSuppliersByQuantity', groupBy: 'supplier' },
+        { key: 'topCountryByQuantity', groupBy: 'buyerCountry' },
+        { key: 'topIndianPortByQuantity', groupBy: 'portOfOrigin' }
+      ],
+      standardUnitRateINR: [
+        { key: 'topBuyersByValue', groupBy: 'buyer' },
+        { key: 'topSuppliersByValue', groupBy: 'supplier' },
+        { key: 'topCountryByValue', groupBy: 'buyerCountry' },
+        { key: 'topIndianPortByValue', groupBy: 'portOfOrigin' }
+      ]
+    };
+
+    // Optimized query function with connection pooling consideration
+    const getGroupedData = async (groupByField, aggregateField, limit = 10) => {
+      const results = await model.findAll({
         attributes: [
           [Sequelize.col(groupByField), groupByField],
-          [Sequelize.fn(aggregateFunction, Sequelize.col(aggregateField)), 'total'],
+          [Sequelize.fn('SUM', Sequelize.col(aggregateField)), 'total'],
+          [Sequelize.fn('COUNT', Sequelize.col('*')), 'count']
         ],
-        where: {
-          [Op.and]: [
-          {
-            [modifiedQuery.searchType]: {
-              [Op.or]: modifiedQuery.searchValue.map(value => ({
-                [Op.like]: `%${value}%`
-              }))
-            }
-          },
-          {
-            shippingBillDate: {
-              [Op.between]: [modifiedQuery.startDate, modifiedQuery.endDate],
-            },
-          }
-        ]
-        },
+        where: baseWhere,
         group: [groupByField],
         order: [[Sequelize.literal('total'), 'DESC']],
         limit,
+        raw: true, // Return plain objects instead of Sequelize instances
+        // Consider adding these for better performance:
+        // subQuery: false, // Avoid subqueries when possible
+        // logging: false // Disable SQL logging in production
       });
 
-      return result.map((item) => ({
-        [groupByField]: item.get(groupByField),
-        total: parseFloat(item.get('total')),
+      // Optimized mapping with direct property access
+      return results.map(item => ({
+        [groupByField]: item[groupByField],
+        total: parseFloat(item.total || 0),
+        count: parseInt(item.count || 0)
       }));
     };
 
-    // Fetching metrics
-    const topBuyersByQuantity = await getGroupedData('buyer', 'quantity', 'SUM');
-    const topSuppliersByQuantity = await getGroupedData('supplier', 'quantity', 'SUM');
-    const topCountryByQuantity = await getGroupedData('buyerCountry', 'quantity', 'SUM');
-    const topIndianPortByQuantity = await getGroupedData('portOfOrigin', 'quantity', 'SUM');
-    const topBuyersByValue = await getGroupedData('buyer', 'standardUnitRateINR', 'SUM');
-    const topSuppliersByValue = await getGroupedData('supplier', 'standardUnitRateINR', 'SUM');
-    const topCountryByValue = await getGroupedData('buyerCountry', 'standardUnitRateINR', 'SUM');
-    const topIndianPortByValue = await getGroupedData('portOfOrigin', 'standardUnitRateINR', 'SUM');
-console.log("last")
-const metrics= {
-        topBuyersByQuantity,
-        topSuppliersByQuantity,
-        topCountryByQuantity,
-        topIndianPortByQuantity,
-        topBuyersByValue,
-        topSuppliersByValue,
-        topCountryByValue,
-        topIndianPortByValue,
+    // Get overall summary statistics
+    const getSummaryStats = async () => {
+      const results = await model.findAll({
+        attributes: [
+          [Sequelize.fn('SUM', Sequelize.col('quantity')), 'totalQuantity'],
+          [Sequelize.fn('SUM', Sequelize.col('totalValueUSD')), 'totalValueUSD'],
+          [Sequelize.fn('COUNT', Sequelize.col('*')), 'totalRecords'],
+          [Sequelize.fn('COUNT', Sequelize.fn('DISTINCT', Sequelize.col('buyer'))), 'uniqueBuyers'],
+          [Sequelize.fn('COUNT', Sequelize.fn('DISTINCT', Sequelize.col('supplier'))), 'uniqueSuppliers']
+        ],
+        where: baseWhere,
+        raw: true
+      });
+
+      const result = results[0];
+      return {
+        totalQuantity: parseFloat(result.totalQuantity || 0),
+        totalValueUSD: parseFloat(result.totalValueUSD || 0),
+        totalRecords: parseInt(result.totalRecords || 0),
+        uniqueBuyers: parseInt(result.uniqueBuyers || 0),
+        uniqueSuppliers: parseInt(result.uniqueSuppliers || 0)
       };
-    // Returning all data
-    return res.status(200).json({
-        statusCode:200,
-        metrics,
-        query
-      });{
-      
     };
+
+    // Execute queries in batches to reduce concurrent load
+    const metrics = {};
+    
+    // Process quantity metrics
+    const quantityPromises = metricsByField.quantity.map(async config => {
+      const data = await getGroupedData(config.groupBy, 'quantity');
+      return [config.key, data];
+    });
+    
+    // Process value metrics
+    const valuePromises = metricsByField.standardUnitRateINR.map(async config => {
+      const data = await getGroupedData(config.groupBy, 'standardUnitRateINR');
+      return [config.key, data];
+    });
+
+    // Execute all queries concurrently including summary stats
+    const [quantityResults, valueResults, summaryStats] = await Promise.all([
+      Promise.all(quantityPromises),
+      Promise.all(valuePromises),
+      getSummaryStats()
+    ]);
+
+    // Build metrics object efficiently
+    [...quantityResults, ...valueResults].forEach(([key, data]) => {
+      metrics[key] = data;
+    });
+
+    // Add summary statistics to metrics
+    metrics.summary = summaryStats;
+
+    return res.status(200).json({
+      statusCode: 200,
+      metrics,
+      query
+    });
+
   } catch (error) {
-    console.log(error)
-    throw error
+    console.error('Error fetching metrics:', error.message, error.stack);
+    return res.status(500).json({
+      statusCode: 500,
+      message: 'Internal server error',
+      // In development, you might want to include more error details:
+      // ...(process.env.NODE_ENV === 'development' && { error: error.message })
+    });
   }
 };
 
@@ -358,7 +445,6 @@ console.log("searching Query")
 
 const getRequiredField = (dataType, informationOf) => {
 
-
   const fields = [
     ['shippingBillDate', 'dateOfShipment'],
     ['H_S_Code', 'HS_Code'],
@@ -373,7 +459,6 @@ const getRequiredField = (dataType, informationOf) => {
   if (dataType === 'cleaned data') {
     fields.push(['productName', 'productName'])
     fields.push(['CAS_NUmber', 'CAS _Number'])
-
   }
 
   if (informationOf === 'export') {
@@ -387,11 +472,7 @@ const getRequiredField = (dataType, informationOf) => {
     fields.push(['supplier', 'foreignCompany'])
     fields.push(['supplierCountry', 'foreignCountry'],)
   }
-
-
-
   return fields;
-
 }
 
 const getSuggestedFieldsFromCached = (data, searchType, suggestion) => {
