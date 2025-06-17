@@ -152,16 +152,16 @@ async function processBatch(batchObject, transaction, model) {
 }
 
 exports.getData = async (req, res) => {
-  const query = req.body
-  console.log("hello");
+  const query = req.body;
+  const page = parseInt(query.page) || 1;
+  const limit = parseInt(query.limit) || 50;
+  const offset = (page - 1) * limit;
+
   const modifiedQuery = queryModifier(query);
   const requiredFields = getRequiredField(modifiedQuery.dataType, modifiedQuery.informationOf);
   const model = modifiedQuery.informationOf === 'import' ? ImportModel : ExportModel;
 
   try {
-    console.log("find");
-
-    // Build the base 'where' clause
     const whereClause = {
       [Op.and]: [
         {
@@ -179,31 +179,27 @@ exports.getData = async (req, res) => {
       ]
     };
 
-    // Add filters using actual database column names, not aliases
+    const fieldMappings = {
+      "Indian Port": "portOfOrigin",
+      "H S Code": "H_S_Code",
+      "Product Description": "productDescription",
+      "Quantity Units": "quantityUnit",
+      "Quantity": "standardQuantity",
+      "Unit Price": "standardUnitRateUSD",
+      "Currency": "currency",
+      "Product Name": "productName",
+      "Indian Company": "supplier",
+      "Foreign Company": "buyer",
+      "Foreign Country": "buyerCountry",
+      "CAS Number": "CAS_Number",
+      "Date of Shipment": "shippingBillDate"
+    };
+
+    // Apply filters
     if (query.filters && typeof query.filters === 'object') {
-      for (const [field, values] of Object.entries(query.filters)) {
+      for (const [displayName, values] of Object.entries(query.filters)) {
         if (Array.isArray(values) && values.length > 0) {
-          // Map the field name to the actual database column name
-          let dbColumnName = field;
-          
-          // Add mappings for fields that have different names in database vs frontend
-          const fieldMappings = {
-            'indianPort': 'portOfOrigin',
-            'dateOfShipment': 'shippingBillDate',
-            'HS_Code': 'H_S_Code',
-            'quantity': 'standardQuantity',
-            'quantityUnits': 'quantityUnit',
-            'unitPrice': 'standardUnitRateUSD',
-            'indianCompany': 'supplier',
-            'foreignCompany': 'buyer',
-            'foreignCountry': 'buyerCountry'
-          };
-          
-          // Use the mapped column name if it exists, otherwise use the original field name
-          if (fieldMappings[field]) {
-            dbColumnName = fieldMappings[field];
-          }
-          
+          const dbColumnName = fieldMappings[displayName] || displayName;
           whereClause[Op.and].push({
             [dbColumnName]: {
               [Op.in]: values
@@ -213,30 +209,52 @@ exports.getData = async (req, res) => {
       }
     }
 
+    const totalCount = await model.count({ where: whereClause });
+
     const data = await model.findAll({
       attributes: requiredFields,
-      where: whereClause
+      where: whereClause,
+      offset,
+      limit
     });
 
-    console.log(data.length);
-    console.log("last");
 
     return res.status(200).json({
       statusCode: 200,
+      page,
+      limit,
+      totalRecords: totalCount,
+      totalPages: Math.ceil(totalCount / limit),
       data,
-      query
     });
 
-  } catch (error) {
+  } catch (err) {
     res.status(500).json({ error: err.message });
   }
 };
+
+
 
 exports.getDataMetrics = async (req, res) => {
   const query = req.body;
   const modifiedQuery = queryModifier(query);
   const model = modifiedQuery.informationOf === 'import' ? ImportModel : ExportModel;
-
+ // Add mappings for fields that have different names in database vs frontend
+          const fieldMappings = {
+      "Indian Port": "portOfOrigin",
+      "H S Code": "H_S_Code",
+      "Product Description": "productDescription",
+      "Quantity Units": "quantityUnit",
+      "Quantity": "standardQuantity",
+      "Unit Price": "standardUnitRateUSD",
+      "Currency": "currency",
+      "Product Name": "productName",
+      "Indian Company": "supplier",
+      "Foreign Company": "buyer",
+      "Foreign Country": "buyerCountry",
+      "CAS Number": "CAS_Number",
+      "Date of Shipment": "shippingBillDate"
+    };
   try {
     // Pre-build the base where clause once
     const baseWhere = {
@@ -256,6 +274,28 @@ exports.getDataMetrics = async (req, res) => {
       ]
     };
 
+    if (query.filters && typeof query.filters === 'object') {
+      for (const [field, values] of Object.entries(query.filters)) {
+        if (Array.isArray(values) && values.length > 0) {
+          // Map the field name to the actual database column name
+          let dbColumnName = field;
+          
+         
+          
+          // Use the mapped column name if it exists, otherwise use the original field name
+          if (fieldMappings[field]) {
+            dbColumnName = fieldMappings[field];
+          }
+          
+          baseWhere[Op.and].push({
+            [dbColumnName]: {
+              [Op.in]: values
+            }
+          });
+        }
+      }
+    }
+
     // Optimized metric configurations with better grouping
     const metricsByField = {
       quantity: [
@@ -264,7 +304,7 @@ exports.getDataMetrics = async (req, res) => {
         { key: 'topCountryByQuantity', groupBy: 'buyerCountry' },
         { key: 'topIndianPortByQuantity', groupBy: 'portOfOrigin' }
       ],
-      standardUnitRateINR: [
+      totalValueInvoice: [
         { key: 'topBuyersByValue', groupBy: 'buyer' },
         { key: 'topSuppliersByValue', groupBy: 'supplier' },
         { key: 'topCountryByValue', groupBy: 'buyerCountry' },
@@ -331,8 +371,8 @@ exports.getDataMetrics = async (req, res) => {
     });
     
     // Process value metrics
-    const valuePromises = metricsByField.standardUnitRateINR.map(async config => {
-      const data = await getGroupedData(config.groupBy, 'standardUnitRateINR');
+    const valuePromises = metricsByField.totalValueInvoice.map(async config => {
+      const data = await getGroupedData(config.groupBy, 'totalValueInvoice');
       return [config.key, data];
     });
 
@@ -351,9 +391,27 @@ exports.getDataMetrics = async (req, res) => {
     // Add summary statistics to metrics
     metrics.summary = summaryStats;
 
+     // Now get all distinct values for filters
+    const filters = {};
+
+    for (const [displayName, dbColumnName] of Object.entries(fieldMappings)) {
+      const distinctValues = await model.findAll({
+        attributes: [
+          [Sequelize.fn('DISTINCT', Sequelize.col(dbColumnName)), dbColumnName]
+        ],
+        where: baseWhere,
+        raw: true
+      });
+
+      filters[displayName] = distinctValues
+        .map(item => item[dbColumnName])
+        .filter(Boolean); // remove nulls
+    }
+
     return res.status(200).json({
       statusCode: 200,
       metrics,
+      filters, // added filters object for frontend
       query
     });
 
