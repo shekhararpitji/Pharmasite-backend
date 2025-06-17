@@ -313,7 +313,7 @@ exports.getDataMetrics = async (req, res) => {
     };
 
     // Optimized query function with connection pooling consideration
-    const getGroupedData = async (groupByField, aggregateField ) => {
+    const getGroupedData = async (groupByField, aggregateField, limit = 6 ) => {
       const results = await model.findAll({
         attributes: [
           [Sequelize.col(groupByField), groupByField],
@@ -323,6 +323,7 @@ exports.getDataMetrics = async (req, res) => {
         where: baseWhere,
         group: [groupByField],
         order: [[Sequelize.literal('total'), 'DESC']],
+        limit,
         raw: true, // Return plain objects instead of Sequelize instances
         // Consider adding these for better performance:
         // subQuery: false, // Avoid subqueries when possible
