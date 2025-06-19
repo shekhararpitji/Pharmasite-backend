@@ -5,6 +5,7 @@ const syncDatabase = require('./config/syncModels');
 const bodyParser = require("body-parser");
 const roleRoutes = require("./routes/roleRoutes");
 const dataRoutes = require("./routes/dataRoutes");
+const metricsRoutes = require("./routes/metricsRoutes");
 const subscriptionRoutes = require("./routes/subscriptionRoutes");
 const syncDb = require('./models/sync.db')
 const cron = require('./crons/search-auto-suggestion');
@@ -30,6 +31,7 @@ app.use(express.urlencoded({ extended: true }));
 // Routes
 app.use('/api/roles', roleRoutes);
 app.use("/api/data", dataRoutes);
+app.use("/api/metrics", metricsRoutes);
 app.use("/api/subscriptions", subscriptionRoutes);
 
 // Error handling middleware
