@@ -81,7 +81,7 @@ const getGroupedData = async (model, baseWhere, groupByField, aggregateField, li
 // API to get top buyers by quantity
 exports.getTopBuyersByQuantity = async (req, res) => {
   try {
-    const query = req.body;
+    const query = req.query;
     const modifiedQuery = queryModifier(query);
     const model = modifiedQuery.informationOf === 'import' ? ImportModel : ExportModel;
     const baseWhere = buildBaseWhereClause(query, modifiedQuery);
@@ -104,7 +104,7 @@ exports.getTopBuyersByQuantity = async (req, res) => {
 
 exports.getTopYearsByQuantity = async (req, res) => {
   try {
-    const query = req.body;
+    const query = req.query;
     const modifiedQuery = queryModifier(query);
     const model = modifiedQuery.informationOf === 'import' ? ImportModel : ExportModel;
     const baseWhere = buildBaseWhereClause(query, modifiedQuery);
@@ -127,7 +127,7 @@ exports.getTopYearsByQuantity = async (req, res) => {
 
 exports.getTopHSCodeByQuantity = async (req, res) => {
   try {
-    const query = req.body;
+    const query = req.query;
     const modifiedQuery = queryModifier(query);
     const model = modifiedQuery.informationOf === 'import' ? ImportModel : ExportModel;
     const baseWhere = buildBaseWhereClause(query, modifiedQuery);
@@ -151,7 +151,7 @@ exports.getTopHSCodeByQuantity = async (req, res) => {
 // API to get top suppliers by quantity
 exports.getTopSuppliersByQuantity = async (req, res) => {
   try {
-    const query = req.body;
+    const query = req.query;
     const modifiedQuery = queryModifier(query);
     const model = modifiedQuery.informationOf === 'import' ? ImportModel : ExportModel;
     const baseWhere = buildBaseWhereClause(query, modifiedQuery);
@@ -175,7 +175,7 @@ exports.getTopSuppliersByQuantity = async (req, res) => {
 // API to get top countries by quantity
 exports.getTopCountryByQuantity = async (req, res) => {
   try {
-    const query = req.body;
+    const query = req.query;
     const modifiedQuery = queryModifier(query);
     const model = modifiedQuery.informationOf === 'import' ? ImportModel : ExportModel;
     const baseWhere = buildBaseWhereClause(query, modifiedQuery);
@@ -199,7 +199,7 @@ exports.getTopCountryByQuantity = async (req, res) => {
 // API to get top Indian ports by quantity
 exports.getTopIndianPortByQuantity = async (req, res) => {
   try {
-    const query = req.body;
+    const query = req.query;
     const modifiedQuery = queryModifier(query);
     const model = modifiedQuery.informationOf === 'import' ? ImportModel : ExportModel;
     const baseWhere = buildBaseWhereClause(query, modifiedQuery);
@@ -223,7 +223,7 @@ exports.getTopIndianPortByQuantity = async (req, res) => {
 // API to get value-based metrics
 exports.getValueMetrics = async (req, res) => {
   try {
-    const query = req.body;
+    const query = req.query;
     const modifiedQuery = queryModifier(query);
     const model = modifiedQuery.informationOf === 'import' ? ImportModel : ExportModel;
     const baseWhere = buildBaseWhereClause(query, modifiedQuery);
@@ -261,7 +261,7 @@ exports.getValueMetrics = async (req, res) => {
 // API to get top buyers by value
 exports.getTopBuyersByValue = async (req, res) => {
   try {
-    const query = req.body;
+    const query = req.query;
     const modifiedQuery = queryModifier(query);
     const model = modifiedQuery.informationOf === 'import' ? ImportModel : ExportModel;
     const baseWhere = buildBaseWhereClause(query, modifiedQuery);
@@ -284,7 +284,7 @@ exports.getTopBuyersByValue = async (req, res) => {
 
 exports.getTopHSCodeByValue = async (req, res) => {
   try {
-    const query = req.body;
+    const query = req.query;
     const modifiedQuery = queryModifier(query);
     const model = modifiedQuery.informationOf === 'import' ? ImportModel : ExportModel;
     const baseWhere = buildBaseWhereClause(query, modifiedQuery);
@@ -307,7 +307,7 @@ exports.getTopHSCodeByValue = async (req, res) => {
 
 exports.getTopYearsByValue = async (req, res) => {
   try {
-    const query = req.body;
+    const query = req.query;
     const modifiedQuery = queryModifier(query);
     const model = modifiedQuery.informationOf === 'import' ? ImportModel : ExportModel;
     const baseWhere = buildBaseWhereClause(query, modifiedQuery);
@@ -330,7 +330,7 @@ exports.getTopYearsByValue = async (req, res) => {
 // API to get top suppliers by value
 exports.getTopSuppliersByValue = async (req, res) => {
   try {
-    const query = req.body;
+    const query = req.query;
     const modifiedQuery = queryModifier(query);
     const model = modifiedQuery.informationOf === 'import' ? ImportModel : ExportModel;
     const baseWhere = buildBaseWhereClause(query, modifiedQuery);
@@ -354,7 +354,7 @@ exports.getTopSuppliersByValue = async (req, res) => {
 // API to get top countries by value
 exports.getTopCountryByValue = async (req, res) => {
   try {
-    const query = req.body;
+    const query = req.query;
     const modifiedQuery = queryModifier(query);
     const model = modifiedQuery.informationOf === 'import' ? ImportModel : ExportModel;
     const baseWhere = buildBaseWhereClause(query, modifiedQuery);
@@ -378,7 +378,7 @@ exports.getTopCountryByValue = async (req, res) => {
 // API to get top Indian ports by value
 exports.getTopIndianPortByValue = async (req, res) => {
   try {
-    const query = req.body;
+    const query = req.query;
     const modifiedQuery = queryModifier(query);
     const model = modifiedQuery.informationOf === 'import' ? ImportModel : ExportModel;
     const baseWhere = buildBaseWhereClause(query, modifiedQuery);
@@ -401,7 +401,7 @@ exports.getTopIndianPortByValue = async (req, res) => {
 // API to get summary statistics
 exports.getSummaryStats = async (req, res) => {
   try {
-    const query = req.body;
+    const query = req.query;
     const modifiedQuery = queryModifier(query);
     const model = modifiedQuery.informationOf === 'import' ? ImportModel : ExportModel;
     const baseWhere = buildBaseWhereClause(query, modifiedQuery);
@@ -443,7 +443,7 @@ exports.getSummaryStats = async (req, res) => {
 // API to get distinct filter values
 // exports.getFilterValues = async (req, res) => {
 //   try {
-//     const query = req.body;
+//     const query = req.query;
 //     const modifiedQuery = queryModifier(query);
 //     const model = modifiedQuery.informationOf === 'import' ? ImportModel : ExportModel;
 //     const baseWhere = buildBaseWhereClause(query, modifiedQuery);
@@ -481,7 +481,7 @@ exports.getSummaryStats = async (req, res) => {
 // Paginated Filter Values API
 exports.getFilterValues = async (req, res) => {
   try {
-    const query = req.body;
+    const query = req.query;
     const modifiedQuery = queryModifier(query);
     const model = modifiedQuery.informationOf === 'import' ? ImportModel : ExportModel;
     const baseWhere = buildBaseWhereClause(query, modifiedQuery);
@@ -647,7 +647,7 @@ exports.getFilterValues = async (req, res) => {
 // Alternative: Separate API for getting filter values for a specific field
 exports.getFilterValuesByField = async (req, res) => {
   try {
-    const query = req.body;
+    const query = req.query;
     const fieldName = req.params.field;
     const modifiedQuery = queryModifier(query);
     const model = modifiedQuery.informationOf === 'import' ? ImportModel : ExportModel;
@@ -747,7 +747,7 @@ exports.getFilterValuesByField = async (req, res) => {
 // API to get filter metadata (count of unique values per field)
 exports.getFilterMetadata = async (req, res) => {
   try {
-    const query = req.body;
+    const query = req.query;
     const modifiedQuery = queryModifier(query);
     const model = modifiedQuery.informationOf === 'import' ? ImportModel : ExportModel;
     const baseWhere = buildBaseWhereClause(query, modifiedQuery);
@@ -786,7 +786,7 @@ exports.getFilterMetadata = async (req, res) => {
 // Search API for filter values across all fields
 exports.searchFilterValues = async (req, res) => {
   try {
-    const query = req.body;
+    const query = req.query;
     const searchTerm = req.query.search;
     const modifiedQuery = queryModifier(query);
     const model = modifiedQuery.informationOf === 'import' ? ImportModel : ExportModel;
