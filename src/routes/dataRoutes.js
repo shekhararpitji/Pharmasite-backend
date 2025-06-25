@@ -14,7 +14,7 @@ router.post('/upload', isAdmin, upload.single('file'), uploadExcel);
 router.get('/download', isParent, hasActiveSubscription, downloadData);
 
 // Basic authenticated routes (available to all authenticated users)
-router.post('/records', isLogedIn, getData);
+router.post('/records',  getData);
 router.post('/records-metrics', getDataMetrics);
 router.get('/suggestion', isLogedIn, getSuggestionValue);
 router.post('/hscodes', isLogedIn, getHSCodes);

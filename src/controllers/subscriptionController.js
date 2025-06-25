@@ -95,8 +95,10 @@ exports.createSubscription = async (req, res) => {
       clientName,
       contactPerson,
       email,
-      subscriptionType,
-      dataType,
+      subscriptionExport,
+      subscriptionImport,
+      dataTypeRaw,
+      dataTypeClean,
       chapterNumber,
       productCount,
       subscribedDurationDownload,
@@ -106,6 +108,14 @@ exports.createSubscription = async (req, res) => {
       paymentId,
       autoRenew
     } = req.body;
+    
+    // Validate chapterNumber is an array
+    if (chapterNumber && !Array.isArray(chapterNumber)) {
+      return res.status(400).json({
+        statusCode: 400,
+        message: 'chapterNumber must be an array of numbers'
+      });
+    }
     
     // Calculate end date based on subscription duration
     const startDate = new Date();
@@ -122,8 +132,10 @@ exports.createSubscription = async (req, res) => {
       clientName,
       contactPerson,
       email,
-      subscriptionType,
-      dataType,
+      subscriptionExport,
+      subscriptionImport,
+      dataTypeRaw,
+      dataTypeClean,
       chapterNumber,
       productCount,
       subscribedDurationDownload,
@@ -168,8 +180,10 @@ exports.updateSubscription = async (req, res) => {
       clientName,
       contactPerson,
       email,
-      subscriptionType,
-      dataType,
+      subscriptionExport,
+      subscriptionImport,
+      dataTypeRaw,
+      dataTypeClean,
       chapterNumber,
       productCount,
       subscribedDurationDownload,
@@ -179,6 +193,14 @@ exports.updateSubscription = async (req, res) => {
       paymentId,
       autoRenew
     } = req.body;
+    
+    // Validate chapterNumber is an array if provided
+    if (chapterNumber && !Array.isArray(chapterNumber)) {
+      return res.status(400).json({
+        statusCode: 400,
+        message: 'chapterNumber must be an array of numbers'
+      });
+    }
     
     // Calculate new end date if duration is updated
     let endDate = subscription.endDate;
@@ -195,8 +217,10 @@ exports.updateSubscription = async (req, res) => {
       clientName: clientName || subscription.clientName,
       contactPerson: contactPerson || subscription.contactPerson,
       email: email || subscription.email,
-      subscriptionType: subscriptionType || subscription.subscriptionType,
-      dataType: dataType || subscription.dataType,
+      subscriptionExport: subscriptionExport !== undefined ? subscriptionExport : subscription.subscriptionExport,
+      subscriptionImport: subscriptionImport !== undefined ? subscriptionImport : subscription.subscriptionImport,
+      dataTypeRaw: dataTypeRaw !== undefined ? dataTypeRaw : subscription.dataTypeRaw,
+      dataTypeClean: dataTypeClean !== undefined ? dataTypeClean : subscription.dataTypeClean,
       chapterNumber: chapterNumber || subscription.chapterNumber,
       productCount: productCount || subscription.productCount,
       subscribedDurationDownload: subscribedDurationDownload || subscription.subscribedDurationDownload,

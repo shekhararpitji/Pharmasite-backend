@@ -22,11 +22,12 @@ const fieldMappings = {
 
 // Shared utility to build base where clause
 const buildBaseWhereClause = (query, modifiedQuery) => {
+  const searchValues = Array.isArray(modifiedQuery.searchValue) ? modifiedQuery.searchValue : [modifiedQuery.searchValue];
   const baseWhere = {
     [Op.and]: [
       {
         [modifiedQuery.searchType]: {
-          [Op.or]: modifiedQuery.searchValue.map(value => ({
+          [Op.or]: searchValues.map(value => ({
             [Op.like]: `%${value}%`
           }))
         }

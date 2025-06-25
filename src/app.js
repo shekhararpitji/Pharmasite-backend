@@ -1,4 +1,5 @@
 const express = require('express');
+const rateLimit = require('express-rate-limit'); // ✅ New import
 const cors = require('cors');
 const dotenv = require('dotenv');
 const syncDatabase = require('./config/syncModels');
@@ -16,6 +17,19 @@ dotenv.config();
 
 // Create Express app
 const app = express();
+// ✅ Rate limiter middleware
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  message: {
+    statusCode: 429,
+    message: 'Too many requests from this IP, please try again after 15 minutes.'
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+app.use(limiter); // ✅ Apply before all routes
 
 // Middleware
 app.use(cors({

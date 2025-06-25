@@ -25,18 +25,37 @@ const SubscriptionModel = sequelize.define('Subscription', {
       isEmail: true
     }
   },
-  subscriptionType: {
-    type: DataTypes.ENUM('raw', 'cleaned'),
+  subscriptionExport: {
+    type: DataTypes.BOOLEAN,
     allowNull: false,
-    defaultValue: 'raw'
+    defaultValue: false
   },
-  dataType: {
-    type: DataTypes.STRING,
-    allowNull: true
+  subscriptionImport: {
+    type: DataTypes.BOOLEAN,
+    allowNull: false,
+    defaultValue: false
+  },
+  dataTypeRaw: {
+    type: DataTypes.BOOLEAN,
+    allowNull: false,
+    defaultValue: false
+  },
+  dataTypeClean: {
+    type: DataTypes.BOOLEAN,
+    allowNull: false,
+    defaultValue: false
   },
   chapterNumber: {
-    type: DataTypes.INTEGER,
-    allowNull: true
+    type: DataTypes.JSON,
+    allowNull: true,
+    defaultValue: [],
+    get() {
+      const rawValue = this.getDataValue('chapterNumber');
+      return rawValue ? JSON.parse(JSON.stringify(rawValue)) : [];
+    },
+    set(value) {
+      this.setDataValue('chapterNumber', Array.isArray(value) ? value : [value]);
+    }
   },
   productCount: {
     type: DataTypes.INTEGER,

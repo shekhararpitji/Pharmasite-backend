@@ -186,6 +186,59 @@ const ExportModel = sequelize.define('ExportData', {
       name: 'idx_fields_filter',
       fields: ['productName', 'shippingBillDate'],
     },
+    // {
+    //   name: 'idx_shipping_bill_date',
+    //   fields: ['shippingBillDate'],
+    // },
+    // {
+    //   name: 'idx_buyer',
+    //   fields: ['buyer'],
+    // },
+    // {
+    //   name: 'idx_supplier',
+    //   fields: ['supplier'],
+    // },
+    // {
+    //   name: 'idx_buyer_country',
+    //   fields: ['buyerCountry'],
+    // },
+    // {
+    //   name: 'idx_port_of_origin',
+    //   fields: ['portOfOrigin'],
+    // },
+    // {
+    //   name: 'idx_h_s_code',
+    //   fields: ['H_S_Code'],
+    // },
+    // {
+    //   name: 'idx_product_description',
+    //   fields: ['productDescription'],
+    //   type: 'GIN', // For text search if using LIKE/iLike
+    // },
+    // {
+    //   name: 'idx_quantity_unit',
+    //   fields: ['quantityUnit'],
+    // },
+    // {
+    //   name: 'idx_standard_quantity',
+    //   fields: ['standardQuantity'],
+    // },
+    // {
+    //   name: 'idx_standard_unit_rate_usd',
+    //   fields: ['standardUnitRateUSD'],
+    // },
+    // {
+    //   name: 'idx_currency',
+    //   fields: ['currency'],
+    // },
+    // {
+    //   name: 'idx_cas_number',
+    //   fields: ['CAS_Number'],
+    // },
+    // {
+    //   name: 'idx_composite_search',
+    //   fields: ['shippingBillDate', 'productDescription', 'buyer', 'supplier'],
+    // }
   ],
 }
 );
