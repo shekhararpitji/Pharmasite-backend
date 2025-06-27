@@ -4,7 +4,8 @@ const { Sequelize, Op } = require('sequelize');
 const sequelize = require('../config/db');
 const ExportModel = require('../models/export.model')
 const ImportModel = require('../models/import.model')
-const redis = require('../config/chached-config')
+const redis = require('../config/chached-config');
+const { queryModifier } = require('../utils/queryModifier');
 
 exports.parseAndInsertExcel = async (filePath, type) => {
   try {
