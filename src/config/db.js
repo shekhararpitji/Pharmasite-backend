@@ -9,10 +9,13 @@ const sequelize = new Sequelize('pharma_db', 'root', 'Pharma@123', {
   dialect: 'mysql', 
   logging: false,   
   pool: {
-    max: 10,
-    min: 0,
-    acquire: 30000,
-    idle: 10000
+    max: 25,
+    min: 5,
+    acquire: 60000,
+    idle: 20000
+  },
+  dialectOptions: {
+    connectTimeout: 60000
   }
 });
 

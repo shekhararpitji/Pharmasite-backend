@@ -236,24 +236,24 @@ exports.getData = async (req, res) => {
 
 
 exports.getDataMetrics = async (req, res) => {
-  const query = req.body;
+  const query = req.query;
   const modifiedQuery = queryModifier(query);
   const model = modifiedQuery.informationOf === 'import' ? ImportModel : ExportModel;
  // Add mappings for fields that have different names in database vs frontend
           const fieldMappings = {
       "Indian Port": "portOfOrigin",
       "H S Code": "H_S_Code",
-      "Product Description": "productDescription",
+      // "Product Description": "productDescription",
       "Quantity Units": "quantityUnit",
-      "Quantity": "standardQuantity",
+      // "Quantity": "standardQuantity",
       "Unit Price": "standardUnitRateUSD",
       "Currency": "currency",
-      "Product Name": "productName",
+      // "Product Name": "productName",
       "Indian Company": "supplier",
       "Foreign Company": "buyer",
       "Foreign Country": "buyerCountry",
-      "CAS Number": "CAS_Number",
-      "Date of Shipment": "shippingBillDate"
+      // "CAS Number": "CAS_Number",
+      // "Date of Shipment": "shippingBillDate"
     };
   try {
     // Pre-build the base where clause once
@@ -302,64 +302,97 @@ exports.getDataMetrics = async (req, res) => {
         { key: 'topBuyersByQuantity', groupBy: 'buyer' },
         { key: 'topSuppliersByQuantity', groupBy: 'supplier' },
         { key: 'topCountryByQuantity', groupBy: 'buyerCountry' },
-        { key: 'topIndianPortByQuantity', groupBy: 'portOfOrigin' }
+        { key: 'topIndianPortByQuantity', groupBy: 'portOfOrigin' },
+        { key: 'topHSCodeByQuantity', groupBy: 'H_S_Code' },
+        { key: 'topYearsByQuantity', groupBy: 'year' }
       ],
       totalValueInvoice: [
         { key: 'topBuyersByValue', groupBy: 'buyer' },
         { key: 'topSuppliersByValue', groupBy: 'supplier' },
         { key: 'topCountryByValue', groupBy: 'buyerCountry' },
-        { key: 'topIndianPortByValue', groupBy: 'portOfOrigin' }
+        { key: 'topIndianPortByValue', groupBy: 'portOfOrigin' },
+        { key: 'topIndianPortByValue', groupBy: 'H_S_Code' },
+        { key: 'topYearsByValue', groupBy: 'year' }
       ]
     };
 
     // Optimized query function with connection pooling consideration
     const getGroupedData = async (groupByField, aggregateField, limit = 6 ) => {
-      const results = await model.findAll({
-        attributes: [
-          [Sequelize.col(groupByField), groupByField],
-          [Sequelize.fn('SUM', Sequelize.col(aggregateField)), 'total'],
-          [Sequelize.fn('COUNT', Sequelize.col('*')), 'count']
-        ],
-        where: baseWhere,
-        group: [groupByField],
-        order: [[Sequelize.literal('total'), 'DESC']],
-        limit,
-        raw: true, // Return plain objects instead of Sequelize instances
-        // Consider adding these for better performance:
-        // subQuery: false, // Avoid subqueries when possible
-        // logging: false // Disable SQL logging in production
-      });
+      try {
+        const results = await model.findAll({
+          attributes: [
+            [Sequelize.col(groupByField), groupByField],
+            [Sequelize.fn('SUM', Sequelize.col(aggregateField)), 'total'],
+            [Sequelize.fn('COUNT', Sequelize.col('*')), 'count']
+          ],
+          where: baseWhere,
+          group: [groupByField],
+          order: [[Sequelize.literal('total'), 'DESC']],
+          limit,
+          raw: true,
+          subQuery: false, // Avoid subqueries for better performance
+          nest: false,     // Flatten results for faster processing
+          benchmark: true, // Track query execution time
+          logging: false,  // Disable SQL logging in production
+          // Set query timeout to avoid hanging connections
+          dialectOptions: {
+            connectTimeout: 30000,
+            options: {
+              requestTimeout: 30000
+            }
+          }
+        });
 
-      // Optimized mapping with direct property access
-      return results.map(item => ({
-        [groupByField]: item[groupByField],
-        total: parseFloat(item.total || 0),
-        count: parseInt(item.count || 0)
-      }));
+        // Optimized mapping with direct property access
+        return results.map(item => ({
+          [groupByField]: item[groupByField],
+          total: parseFloat(item.total || 0),
+          count: parseInt(item.count || 0)
+        }));
+      } catch (error) {
+        console.error(`Error in getGroupedData for ${groupByField}:`, error.message);
+        // Return empty array instead of failing the entire request
+        return [];
+      }
     };
 
     // Get overall summary statistics
     const getSummaryStats = async () => {
-      const results = await model.findAll({
-        attributes: [
-          [Sequelize.fn('SUM', Sequelize.col('quantity')), 'totalQuantity'],
-          [Sequelize.fn('SUM', Sequelize.col('totalValueUSD')), 'totalValueUSD'],
-          [Sequelize.fn('COUNT', Sequelize.col('*')), 'totalRecords'],
-          [Sequelize.fn('COUNT', Sequelize.fn('DISTINCT', Sequelize.col('buyer'))), 'uniqueBuyers'],
-          [Sequelize.fn('COUNT', Sequelize.fn('DISTINCT', Sequelize.col('supplier'))), 'uniqueSuppliers']
-        ],
-        where: baseWhere,
-        raw: true
-      });
+      try {
+        const results = await model.findAll({
+          attributes: [
+            [Sequelize.fn('SUM', Sequelize.col('quantity')), 'totalQuantity'],
+            [Sequelize.fn('SUM', Sequelize.col('totalValueUSD')), 'totalValueUSD'],
+            [Sequelize.fn('COUNT', Sequelize.col('*')), 'totalRecords'],
+            [Sequelize.fn('COUNT', Sequelize.fn('DISTINCT', Sequelize.col('buyer'))), 'uniqueBuyers'],
+            [Sequelize.fn('COUNT', Sequelize.fn('DISTINCT', Sequelize.col('supplier'))), 'uniqueSuppliers']
+          ],
+          where: baseWhere,
+          raw: true,
+          subQuery: false,
+          benchmark: true,
+          logging: false
+        });
 
-      const result = results[0];
-      return {
-        totalQuantity: parseFloat(result.totalQuantity || 0),
-        totalValueUSD: parseFloat(result.totalValueUSD || 0),
-        totalRecords: parseInt(result.totalRecords || 0),
-        uniqueBuyers: parseInt(result.uniqueBuyers || 0),
-        uniqueSuppliers: parseInt(result.uniqueSuppliers || 0)
-      };
+        const result = results[0] || {};
+        return {
+          totalQuantity: parseFloat(result.totalQuantity || 0),
+          totalValueUSD: parseFloat(result.totalValueUSD || 0),
+          totalRecords: parseInt(result.totalRecords || 0),
+          uniqueBuyers: parseInt(result.uniqueBuyers || 0),
+          uniqueSuppliers: parseInt(result.uniqueSuppliers || 0)
+        };
+      } catch (error) {
+        console.error('Error in getSummaryStats:', error.message);
+        // Return default values instead of failing
+        return {
+          totalQuantity: 0,
+          totalValueUSD: 0,
+          totalRecords: 0,
+          uniqueBuyers: 0,
+          uniqueSuppliers: 0
+        };
+      }
     };
 
     // Execute queries in batches to reduce concurrent load
@@ -392,27 +425,43 @@ exports.getDataMetrics = async (req, res) => {
     // Add summary statistics to metrics
     metrics.summary = summaryStats;
 
-     // Now get all distinct values for filters
+    // Now get all distinct values for filters - optimize to run concurrently
     const filters = {};
-
-    for (const [displayName, dbColumnName] of Object.entries(fieldMappings)) {
-      const distinctValues = await model.findAll({
-        attributes: [
-          [Sequelize.fn('DISTINCT', Sequelize.col(dbColumnName)), dbColumnName]
-        ],
-        where: baseWhere,
-        raw: true
-      });
-
-      filters[displayName] = distinctValues
-        .map(item => item[dbColumnName])
-        .filter(Boolean); // remove nulls
-    }
+    
+    // Create an array of promises for filter queries
+    const filterPromises = Object.entries(fieldMappings).map(async ([displayName, dbColumnName]) => {
+      try {
+        const distinctValues = await model.findAll({
+          attributes: [
+            [Sequelize.fn('DISTINCT', Sequelize.col(dbColumnName)), dbColumnName]
+          ],
+          where: baseWhere,
+          raw: true,
+          limit: 100, // Limit the number of distinct values to prevent large result sets
+          subQuery: false
+        });
+        
+        return [displayName, distinctValues
+          .map(item => item[dbColumnName])
+          .filter(Boolean)]; // remove nulls
+      } catch (error) {
+        console.error(`Error fetching filter values for ${displayName}:`, error.message);
+        return [displayName, []]; // Return empty array for this filter on error
+      }
+    });
+    
+    // Wait for all filter queries to complete
+    const filterResults = await Promise.all(filterPromises);
+    
+    // Build filters object from results
+    filterResults.forEach(([displayName, values]) => {
+      filters[displayName] = values;
+    });
 
     return res.status(200).json({
       statusCode: 200,
       metrics,
-      filters, // added filters object for frontend
+      filters,
       query
     });
 
@@ -436,28 +485,37 @@ exports.getSuggestedData = async (query) => {
 
     if(modifiedQuery.informationOf === 'import'){
       cachedData = await redis.get('import_suggested_data');
-    }else{
-      cachedData = await redis.get('export_suggested_data');
-
-    }
-    if (!cachedData) {
-      data = getSuggestedFieldsFromCached(JSON.parse(cachedData), modifiedQuery.searchType,query.suggestion );
     } else {
-      data = await model.findAll({
-        attributes: [
-          [Sequelize.fn('DISTINCT', Sequelize.col(modifiedQuery.searchType)),'title'],
-        ],
-        where: {
-          [modifiedQuery.searchType]: {
-            [Op.like]: `%${query.suggestion}%`
-          }
-        },
-        limit: 20
-      });
+      cachedData = await redis.get('export_suggested_data');
+    }
+    
+    if (cachedData) {
+      data = getSuggestedFieldsFromCached(JSON.parse(cachedData), modifiedQuery.searchType, query.suggestion);
+    } else {
+      try {
+        data = await model.findAll({
+          attributes: [
+            [Sequelize.fn('DISTINCT', Sequelize.col(modifiedQuery.searchType)), 'title'],
+          ],
+          where: {
+            [modifiedQuery.searchType]: {
+              [Op.like]: `%${query.suggestion}%`
+            }
+          },
+          limit: 20,
+          raw: true,
+          subQuery: false,
+          logging: false
+        });
+      } catch (error) {
+        console.error('Error in database query for suggestions:', error.message);
+        data = []; // Return empty array on error
+      }
     }
     return data;
   } catch (error) {
-    throw error
+    console.error('Error in getSuggestedData:', error.message);
+    return []; // Return empty array instead of throwing
   }
 };
 
