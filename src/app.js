@@ -7,10 +7,14 @@ const bodyParser = require("body-parser");
 const roleRoutes = require("./routes/roleRoutes");
 const dataRoutes = require("./routes/dataRoutes");
 const metricsRoutes = require("./routes/metricsRoutes");
+const clickhouseMetricsRoutes = require("./routes/clickhouseMetricsRoutes");
 const subscriptionRoutes = require("./routes/subscriptionRoutes");
 const syncDb = require('./models/sync.db')
 const cron = require('./crons/search-auto-suggestion');
+const aggregationCron = require('./crons/data-aggregation');
 const cookieParser = require('cookie-parser');
+const { initClickHouse } = require('./config/clickhouse');
+const { initClickHouseExport } = require('./models/clickhouse/export.model');
 
 // Load environment variables
 dotenv.config();
@@ -46,6 +50,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use('/api/roles', roleRoutes);
 app.use("/api/data", dataRoutes);
 app.use("/api/metrics", metricsRoutes);
+app.use("/api/clickhouse-metrics", clickhouseMetricsRoutes);
 app.use("/api/subscriptions", subscriptionRoutes);
 
 // Error handling middleware
@@ -66,6 +71,25 @@ const startServer = async () => {
   try {
     // Sync database (set force: true to reset database)
     await syncDatabase(false);
+    
+    // Initialize ClickHouse connection if enabled
+    if (process.env.USE_CLICKHOUSE === 'true') {
+      try {
+        console.log('Initializing ClickHouse connection...');
+        const clickhouseReady = await initClickHouse();
+        if (clickhouseReady) {
+          console.log('ClickHouse connection established');
+          // Initialize ClickHouse tables and views
+          await initClickHouseExport();
+          console.log('ClickHouse tables and views initialized');
+        } else {
+          console.warn('ClickHouse connection failed, analytics will use MySQL');
+        }
+      } catch (clickhouseError) {
+        console.error('Error initializing ClickHouse:', clickhouseError);
+        console.warn('Continuing without ClickHouse, analytics will use MySQL');
+      }
+    }
 
     app.listen(PORT, () => {
       console.log(`Server is running on port ${PORT}`);
