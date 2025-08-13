@@ -33,7 +33,7 @@ app.use(limiter); // ✅ Apply before all routes
 
 // Middleware
 app.use(cors({
-    origin:  'http://65.1.119.54:3000', // Exact frontend origin
+    origin:  'http://localhost:5173', // Exact frontend origin
     credentials: true, // Allow cookies
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'], // Allowed methods
     allowedHeaders: ['Content-Type', 'Authorization', 'Session-ID'], // Allowed headers

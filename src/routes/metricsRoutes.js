@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const metricsController = require('../controllers/metricsController.js');
+const metricsControllerMerge = require('../controllers/metricsControllerMerge.js');
 const cacheMiddleware = require('../middlewares/cacheMiddleware');
 
 router.get('/top-buyers-by-quantity', cacheMiddleware, metricsController.getTopBuyersByQuantity);
@@ -15,6 +16,13 @@ router.get('/top-HSCode-by-value', cacheMiddleware, metricsController.getTopHSCo
 router.get('/top-suppliers-by-value', cacheMiddleware, metricsController.getTopSuppliersByValue);
 router.get('/top-country-by-value', cacheMiddleware, metricsController.getTopCountryByValue);
 router.get('/top-indian-port-by-value', cacheMiddleware, metricsController.getTopIndianPortByValue);
+router.get('/top-indian-port', cacheMiddleware, metricsControllerMerge.getTopIndianPort);
+router.get('/top-country', cacheMiddleware, metricsControllerMerge.getTopCountry);
+router.get('/top-suppliers', cacheMiddleware, metricsControllerMerge.getTopSuppliers);
+router.get('/top-HSCode', cacheMiddleware, metricsControllerMerge.getTopHSCode);
+router.get('/top-years', cacheMiddleware, metricsControllerMerge.getTopYears);
+router.get('/top-buyers', cacheMiddleware, metricsControllerMerge.getTopBuyers);
+router.get('/value', cacheMiddleware, metricsControllerMerge.getValue);
 router.get('/summary-stats', cacheMiddleware, metricsController.getSummaryStats);
 router.get('/filter-values', cacheMiddleware, metricsController.getFilterValues);
 router.get('/filters/metadata', cacheMiddleware, metricsController.getFilterMetadata);

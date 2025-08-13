@@ -4,8 +4,8 @@ const { Sequelize } = require('sequelize');
 dotenv.config();
 
 
-const sequelize = new Sequelize('pharma_db', 'root', 'Pharma@123', {
-  host: '13.203.61.86' || 'localhost',
+const sequelize = new Sequelize('pharmasite', 'root', 'root', {
+  host: 'localhost',
   dialect: 'mysql', 
   logging: false,   
   pool: {
