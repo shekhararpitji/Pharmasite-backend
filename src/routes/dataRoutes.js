@@ -6,7 +6,7 @@ const {uploadExcel, getData, getSuggestionValue,getHSCodes} = require('../contro
 
 const router = express.Router();
 router.post('/upload', upload.single('file'), uploadExcel);
-router.get('/records', isLogedIn, getData);
+router.get('/records',  getData);
 router.get('/suggestion', getSuggestionValue);
 router.post('/hscodes', getHSCodes);
 

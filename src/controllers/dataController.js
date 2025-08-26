@@ -44,7 +44,8 @@ const { parseAndInsertExcel, getData, getSuggestedData, getHSCodes } = require('
       res.status(200).json({
         statusCode:200,
         data,
-        query
+        query,
+        totalRecords:data?.data.length
       });
     } catch (err) {
       res.status(500).json({ error: err.message });

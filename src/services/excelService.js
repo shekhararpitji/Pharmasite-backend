@@ -131,95 +131,154 @@ async function batchHandler(batches, model) {
 
 
 exports.getData = async (query) => {
+  const modifiedQuery = queryModifier(query);
+  const requiredFields = getRequiredField(modifiedQuery.dataType, modifiedQuery.informationOf);
+  const model = modifiedQuery.informationOf === 'import' ? ImportModel : ExportModel;
 
-  const modifiedQuery = queryModifier(query)
-  const requiredFields = getRequiredField(modifiedQuery.dataType, modifiedQuery.informationOf)
-  const model = modifiedQuery.informationOf === 'import' ? ImportModel : ExportModel
   try {
-    // const data = await model.findAll({
-    //   attributes: requiredFields,
-    //   where: {
-    //     [modifiedQuery.searchType]:{
-    //       [Op.in]:modifiedQuery.searchValue
-    //     },
-    //     shippingBillDate: {
-    //       [Op.between]: [modifiedQuery.startDate, modifiedQuery.endDate],
-    //     },
-    //   },
-    // });
-
-    const data = await model.findAll({
-      attributes: requiredFields,
-      where: {
-        [Op.and]: [
-          {
-            [modifiedQuery.searchType]: {
-              [Op.or]: modifiedQuery.searchValue.map(value => ({
-                [Op.like]: `%${value}%`
-              }))
-            }
-          },
-          {
-            shippingBillDate: {
-              [Op.between]: [modifiedQuery.startDate, modifiedQuery.endDate],
-            },
+    const baseWhere = {
+      [Op.and]: [
+        {
+          [modifiedQuery.searchType]: {
+            [Op.or]: modifiedQuery.searchValue.map(value => ({
+              [Op.like]: `%${value}%`
+            }))
           }
-        ]
-      }
-    });
-
-    // Helper function to get grouped data
-    const getGroupedData = async (groupByField, aggregateField, aggregateFunction, limit = 10) => {
-      const result = await model.findAll({
-        attributes: [
-          [Sequelize.col(groupByField), groupByField],
-          [Sequelize.fn(aggregateFunction, Sequelize.col(aggregateField)), 'total'],
-        ],
-        where: {
+        },
+        {
           shippingBillDate: {
             [Op.between]: [modifiedQuery.startDate, modifiedQuery.endDate],
           },
-        },
-        group: [groupByField],
-        order: [[Sequelize.literal('total'), 'DESC']],
-        limit,
-      });
-
-      return result.map((item) => ({
-        [groupByField]: item.get(groupByField),
-        total: parseFloat(item.get('total')),
-      }));
+        }
+      ],
     };
 
-    // Fetching metrics
-    const topBuyersByQuantity = await getGroupedData('buyer', 'quantity', 'SUM');
-    const topSuppliersByQuantity = await getGroupedData('supplier', 'quantity', 'SUM');
-    const topCountryByQuantity = await getGroupedData('buyerCountry', 'quantity', 'SUM');
-    const topIndianPortByQuantity = await getGroupedData('portOfOrigin', 'quantity', 'SUM');
-    const topBuyersByValue = await getGroupedData('buyer', 'standardUnitRateINR', 'SUM');
-    const topSuppliersByValue = await getGroupedData('supplier', 'standardUnitRateINR', 'SUM');
-    const topCountryByValue = await getGroupedData('buyerCountry', 'standardUnitRateINR', 'SUM');
-    const topIndianPortByValue = await getGroupedData('portOfOrigin', 'standardUnitRateINR', 'SUM');
+    const fetchDataStartTime = new Date();
 
-    // Returning all data
+    // Fetch both datasets in parallel
+    let requiredData;
+    if(modifiedQuery?.dataType === 'clean data'){
+     requiredData = await model.findAll({
+        attributes: ['buyer', 'supplier', 'buyerCountry', 'portOfOrigin', 'quantity', 'standardUnitRateINR'],
+        where: baseWhere,
+        raw: true
+      })
+    }else{
+      requiredData = await model.findAll({
+        attributes: requiredFields,
+        where: baseWhere,
+      })
+    }
+
+    console.log(`Data fetched in ${((new Date() - fetchDataStartTime)/1000).toFixed(2)} seconds`);
+
+    // Initialize all metric maps
+    const metrics = {
+      buyersByQuantity: new Map(),
+      buyersByValue: new Map(),
+      suppliersByQuantity: new Map(),
+      suppliersByValue: new Map(),
+      countryByQuantity: new Map(),
+      countryByValue: new Map(),
+      portByQuantity: new Map(),
+      portByValue: new Map(),
+    };
+
+    const metricsStartTime = new Date();
+
+    // Single pass through data to calculate ALL metrics
+    requiredData?.forEach(row => {
+      const quantity = parseFloat(row.quantity) || 0;
+      const value = parseFloat(row.standardUnitRateINR) || 0;
+
+      // Buyer metrics
+      if (row.buyer) {
+        metrics.buyersByQuantity.set(
+          row.buyer,
+          (metrics.buyersByQuantity.get(row.buyer) || 0) + quantity
+        );
+        metrics.buyersByValue.set(
+          row.buyer,
+          (metrics.buyersByValue.get(row.buyer) || 0) + value
+        );
+      }
+
+      // Supplier metrics
+      if (row.supplier) {
+        metrics.suppliersByQuantity.set(
+          row.supplier,
+          (metrics.suppliersByQuantity.get(row.supplier) || 0) + quantity
+        );
+        metrics.suppliersByValue.set(
+          row.supplier,
+          (metrics.suppliersByValue.get(row.supplier) || 0) + value
+        );
+      }
+
+      // Country metrics
+      if (row.buyerCountry) {
+        metrics.countryByQuantity.set(
+          row.buyerCountry,
+          (metrics.countryByQuantity.get(row.buyerCountry) || 0) + quantity
+        );
+        metrics.countryByValue.set(
+          row.buyerCountry,
+          (metrics.countryByValue.get(row.buyerCountry) || 0) + value
+        );
+      }
+
+      // Port metrics
+      if (row.portOfOrigin) {
+        metrics.portByQuantity.set(
+          row.portOfOrigin,
+          (metrics.portByQuantity.get(row.portOfOrigin) || 0) + quantity
+        );
+        metrics.portByValue.set(
+          row.portOfOrigin,
+          (metrics.portByValue.get(row.portOfOrigin) || 0) + value
+        );
+      }
+    });
+
+    // Helper function to convert Map to sorted top-10 array
+    const mapToTopArray = (map, entityField) => {
+      return Array.from(map.entries())
+        .map(([entity, total]) => ({
+          [entityField]: entity,
+          total: Math.round(total * 100) / 100
+        }))
+        .sort((a, b) => b.total - a.total)
+        .slice(0, 10);
+    };
+
+    // Convert all metrics to final format
+    const finalMetrics = {
+      topBuyersByQuantity: mapToTopArray(metrics.buyersByQuantity, 'buyer'),
+      topBuyersByValue: mapToTopArray(metrics.buyersByValue, 'buyer'),
+      topSuppliersByQuantity: mapToTopArray(metrics.suppliersByQuantity, 'supplier'),
+      topSuppliersByValue: mapToTopArray(metrics.suppliersByValue, 'supplier'),
+      topCountryByQuantity: mapToTopArray(metrics.countryByQuantity, 'buyerCountry'),
+      topCountryByValue: mapToTopArray(metrics.countryByValue, 'buyerCountry'),
+      topIndianPortByQuantity: mapToTopArray(metrics.portByQuantity, 'portOfOrigin'),
+      topIndianPortByValue: mapToTopArray(metrics.portByValue, 'portOfOrigin')
+    };
+
+    console.log(`Metrics calculated in ${((new Date() - metricsStartTime)/1000).toFixed(2)} seconds`);
+
     return {
-      data,
-      metrics: {
-        topBuyersByQuantity,
-        topSuppliersByQuantity,
-        topCountryByQuantity,
-        topIndianPortByQuantity,
-        topBuyersByValue,
-        topSuppliersByValue,
-        topCountryByValue,
-        topIndianPortByValue,
-      },
+      data: requiredData,
+      metrics: finalMetrics
     };
+
   } catch (error) {
-    console.log(error)
-    throw error
+    console.log(error);
+    throw error;
   }
 };
+
+
+
+
 
 exports.getSuggestedData = async (query) => {
   const modifiedQuery = queryModifier(query)
