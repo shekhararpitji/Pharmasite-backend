@@ -5,7 +5,6 @@ const sequelize = require('../config/db');
 const { ExportModel, ImportModel } = require('../models');
 const redis = require('../config/chached-config');
 const { queryModifier } = require('../utils/queryModifier');
-const pool = require('../config/mysqlPool');
 
 /**
  * Parse Excel file and insert data into database
