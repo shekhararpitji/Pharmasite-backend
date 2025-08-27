@@ -16,25 +16,62 @@ const fieldMappings = {
   "CAS Number": "CAS_Number",
 };
 
+// Helper function to convert datetime string to date format
+const convertToDateString = (dateString) => {
+  if (!dateString) return null;
+  // If it's already a date string (YYYY-MM-DD), return as is
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateString)) {
+    return dateString;
+  }
+  // If it's a datetime string, extract the date part
+  if (dateString.includes(' ')) {
+    return dateString.split(' ')[0];
+  }
+  // If it's a Date object or other format, try to convert
+  try {
+    return new Date(dateString).toISOString().split('T')[0];
+  } catch (error) {
+    console.warn('Invalid date format:', dateString);
+    return null;
+  }
+};
+
 // Build ClickHouse WHERE clause from query parameters
 const buildClickHouseWhereClause = (query, modifiedQuery) => {
   let whereConditions = [];
-  let params = {};
 
-  // Date range filter
+  console.log('buildClickHouseWhereClause - query:', query);
+  console.log('buildClickHouseWhereClause - modifiedQuery:', modifiedQuery);
+
+  // Date range filter - prioritize modifiedQuery dates (from queryModifier)
   if (modifiedQuery.startDate && modifiedQuery.endDate) {
-    whereConditions.push('shippingBillDate BETWEEN {startDate:String} AND {endDate:String}');
-    params.startDate = modifiedQuery.startDate;
-    params.endDate = modifiedQuery.endDate;
+    console.log('Using modifiedQuery dates:', modifiedQuery.startDate, modifiedQuery.endDate);
+    // Convert datetime strings to date format for ClickHouse
+    const startDate = convertToDateString(modifiedQuery.startDate);
+    const endDate = convertToDateString(modifiedQuery.endDate);
+    if (startDate && endDate) {
+      whereConditions.push(`shippingBillDate BETWEEN '${startDate}' AND '${endDate}'`);
+    }
+  } else if (query.startDate && query.endDate) {
+    console.log('Using direct query dates:', query.startDate, query.endDate);
+    // Handle direct startDate/endDate parameters
+    const startDate = convertToDateString(query.startDate);
+    const endDate = convertToDateString(query.endDate);
+    if (startDate && endDate) {
+      whereConditions.push(`shippingBillDate BETWEEN '${startDate}' AND '${endDate}'`);
+    }
+  } else {
+    console.log('No date parameters found, skipping date filter');
   }
+  // If no date parameters are provided, don't add any date filter (query all data)
 
   // Search filter
-  if (modifiedQuery.searchType && modifiedQuery.searchValue) {
-    const searchValues = Array.isArray(modifiedQuery.searchValue) ? modifiedQuery.searchValue : [modifiedQuery.searchValue];
-    const searchConditions = searchValues.map((value, index) => {
-      const paramKey = `searchValue${index}`;
-      params[paramKey] = `%${value}%`;
-      return `${modifiedQuery.searchType} ILIKE {${paramKey}:String}`;
+  if (query.searchType && query.searchValue) {
+    query.searchValue = query.searchValue.split(',');
+    const searchValues = Array.isArray(query.searchValue) ? query.searchValue : [query.searchValue];
+    const searchConditions = searchValues.map(value => {
+      const escapedValue = value.replace(/'/g, "''"); // Escape single quotes
+      return `${query.searchType} ILIKE '%${escapedValue}%'`;
     });
     whereConditions.push(`(${searchConditions.join(' OR ')})`);
   }
@@ -44,48 +81,75 @@ const buildClickHouseWhereClause = (query, modifiedQuery) => {
     for (const [field, values] of Object.entries(query.filters)) {
       if (Array.isArray(values) && values.length > 0) {
         const dbColumnName = fieldMappings[field] || field;
-        const paramKey = `filter_${field.replace(/\s+/g, '_')}`;
-        params[paramKey] = values;
-        whereConditions.push(`${dbColumnName} IN {${paramKey}:Array(String)}`);
+        const escapedValues = values.map(value => {
+          const escapedValue = value.replace(/'/g, "''"); // Escape single quotes
+          return `'${escapedValue}'`;
+        });
+        whereConditions.push(`${dbColumnName} IN (${escapedValues.join(', ')})`);
       }
     }
   }
 
+  console.log('Final whereConditions:', whereConditions);
+  
   return {
     whereClause: whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '',
-    params
+    params: {} // No params needed for normal queries
   };
 };
 
 // Get table name based on information type
 const getTableName = (informationOf) => {
-  return informationOf === 'import' ? 'import_data' : 'export_data';
+  // Default to export if not specified
+  const infoType = informationOf || 'export';
+  return infoType === 'import' ? 'import_data' : 'export_data';
 };
 
 // Generic function to get grouped data from ClickHouse
-const getClickHouseGroupedData = async (tableName, whereClause, params, groupByField, aggregateField, limit = 6) => {
-  const query = `
-    SELECT 
-      ${groupByField},
-      sum(${aggregateField}) as total,
-      count(*) as count
-    FROM ${DATABASE_NAME}.${tableName}
-    ${whereClause}
-    GROUP BY ${groupByField}
-    ORDER BY total DESC
-    LIMIT {limit:UInt32}
-  `;
+const getClickHouseGroupedData = async (tableName, whereClause, groupByField, aggregateField, limit = 6) => {
+  try {
+    const query = `
+      SELECT 
+        ${groupByField},
+        sum(${aggregateField}) as total,
+        count(*) as count
+      FROM ${DATABASE_NAME}.${tableName}
+      ${whereClause}
+      GROUP BY ${groupByField}
+      ORDER BY total DESC
+      LIMIT ${limit}
+    `;
 
-  const result = await clickhouse.query({
-    query,
-    params: { ...params, limit }
-  }).json();
+    console.log('Debug - Final Query:', query);
 
-  return result.data.map(item => ({
-    [groupByField]: item[groupByField],
-    total: parseFloat(item.total || 0),
-    count: parseInt(item.count || 0)
-  }));
+    const result = await clickhouse.query({
+      query
+    });
+
+    const resultData = await result.json();
+    console.log('Debug - Query result type:', typeof resultData);
+    console.log('Debug - Query result:', resultData);
+    
+    // Handle different result structures
+    let rows;
+    if (resultData && resultData.data && Array.isArray(resultData.data)) {
+      rows = resultData.data;
+    } else if (Array.isArray(resultData)) {
+      rows = resultData;
+    } else {
+      console.error('Unexpected result structure:', resultData);
+      return [];
+    }
+    
+    return rows.map(item => ({
+      [groupByField]: item[groupByField],
+      total: parseFloat(item.total || 0),
+      count: parseInt(item.count || 0)
+    }));
+  } catch (error) {
+    console.error('Error in getClickHouseGroupedData:', error);
+    throw error;
+  }
 };
 
 // QUANTITY-BASED METRICS
@@ -94,11 +158,27 @@ const getClickHouseGroupedData = async (tableName, whereClause, params, groupByF
 exports.getTopBuyersByQuantity = async (req, res) => {
   try {
     const query = req.query;
-    const modifiedQuery = queryModifier(query);
+    
+    // Test: Create a simple modifiedQuery without using queryModifier
+    const modifiedQuery = {
+      informationOf: query.informationOf || 'export',
+      startDate: '1970-01-01',
+      endDate: '2023-12-31'
+    };
+    
+    console.log('Test - Using hardcoded dates instead of queryModifier');
+    
     const tableName = getTableName(modifiedQuery.informationOf);
     const { whereClause, params } = buildClickHouseWhereClause(query, modifiedQuery);
 
-    const data = await getClickHouseGroupedData(tableName, whereClause, params, 'buyer', 'quantity');
+    console.log('Debug - Query:', query);
+    console.log('Debug - Modified Query:', modifiedQuery);
+    console.log('Debug - Where Clause:', whereClause);
+    console.log('Debug - Params:', params);
+    console.log('Debug - Table Name:', tableName);
+    console.log('Debug - Database Name:', DATABASE_NAME);
+
+    const data = await getClickHouseGroupedData(tableName, whereClause, 'buyer', 'quantity');
 
     return res.status(200).json({
       statusCode: 200,
@@ -122,7 +202,7 @@ exports.getTopYearsByQuantity = async (req, res) => {
     const tableName = getTableName(modifiedQuery.informationOf);
     const { whereClause, params } = buildClickHouseWhereClause(query, modifiedQuery);
 
-    const data = await getClickHouseGroupedData(tableName, whereClause, params, 'year', 'quantity');
+    const data = await getClickHouseGroupedData(tableName, whereClause, 'year', 'quantity');
 
     return res.status(200).json({
       statusCode: 200,
@@ -146,7 +226,7 @@ exports.getTopHSCodeByQuantity = async (req, res) => {
     const tableName = getTableName(modifiedQuery.informationOf);
     const { whereClause, params } = buildClickHouseWhereClause(query, modifiedQuery);
 
-    const data = await getClickHouseGroupedData(tableName, whereClause, params, 'H_S_Code', 'quantity');
+    const data = await getClickHouseGroupedData(tableName, whereClause, 'H_S_Code', 'quantity');
 
     return res.status(200).json({
       statusCode: 200,
@@ -170,7 +250,7 @@ exports.getTopSuppliersByQuantity = async (req, res) => {
     const tableName = getTableName(modifiedQuery.informationOf);
     const { whereClause, params } = buildClickHouseWhereClause(query, modifiedQuery);
 
-    const data = await getClickHouseGroupedData(tableName, whereClause, params, 'supplier', 'quantity');
+    const data = await getClickHouseGroupedData(tableName, whereClause, 'supplier', 'quantity');
 
     return res.status(200).json({
       statusCode: 200,
@@ -194,7 +274,7 @@ exports.getTopCountryByQuantity = async (req, res) => {
     const tableName = getTableName(modifiedQuery.informationOf);
     const { whereClause, params } = buildClickHouseWhereClause(query, modifiedQuery);
 
-    const data = await getClickHouseGroupedData(tableName, whereClause, params, 'buyerCountry', 'quantity');
+    const data = await getClickHouseGroupedData(tableName, whereClause, 'buyerCountry', 'quantity');
 
     return res.status(200).json({
       statusCode: 200,
@@ -218,7 +298,7 @@ exports.getTopIndianPortByQuantity = async (req, res) => {
     const tableName = getTableName(modifiedQuery.informationOf);
     const { whereClause, params } = buildClickHouseWhereClause(query, modifiedQuery);
 
-    const data = await getClickHouseGroupedData(tableName, whereClause, params, 'portOfOrigin', 'quantity');
+    const data = await getClickHouseGroupedData(tableName, whereClause, 'portOfOrigin', 'quantity');
 
     return res.status(200).json({
       statusCode: 200,
@@ -244,7 +324,7 @@ exports.getTopBuyersByValue = async (req, res) => {
     const tableName = getTableName(modifiedQuery.informationOf);
     const { whereClause, params } = buildClickHouseWhereClause(query, modifiedQuery);
 
-    const data = await getClickHouseGroupedData(tableName, whereClause, params, 'buyer', 'totalValueInvoice');
+    const data = await getClickHouseGroupedData(tableName, whereClause, 'buyer', 'totalValueInvoice');
 
     return res.status(200).json({
       statusCode: 200,
@@ -268,7 +348,7 @@ exports.getTopYearsByValue = async (req, res) => {
     const tableName = getTableName(modifiedQuery.informationOf);
     const { whereClause, params } = buildClickHouseWhereClause(query, modifiedQuery);
 
-    const data = await getClickHouseGroupedData(tableName, whereClause, params, 'year', 'totalValueInvoice');
+    const data = await getClickHouseGroupedData(tableName, whereClause, 'year', 'totalValueInvoice');
 
     return res.status(200).json({
       statusCode: 200,
@@ -292,7 +372,7 @@ exports.getTopHSCodeByValue = async (req, res) => {
     const tableName = getTableName(modifiedQuery.informationOf);
     const { whereClause, params } = buildClickHouseWhereClause(query, modifiedQuery);
 
-    const data = await getClickHouseGroupedData(tableName, whereClause, params, 'H_S_Code', 'totalValueInvoice');
+    const data = await getClickHouseGroupedData(tableName, whereClause, 'H_S_Code', 'totalValueInvoice');
 
     return res.status(200).json({
       statusCode: 200,
@@ -316,7 +396,7 @@ exports.getTopSuppliersByValue = async (req, res) => {
     const tableName = getTableName(modifiedQuery.informationOf);
     const { whereClause, params } = buildClickHouseWhereClause(query, modifiedQuery);
 
-    const data = await getClickHouseGroupedData(tableName, whereClause, params, 'supplier', 'totalValueInvoice');
+    const data = await getClickHouseGroupedData(tableName, whereClause, 'supplier', 'totalValueInvoice');
 
     return res.status(200).json({
       statusCode: 200,
@@ -340,7 +420,7 @@ exports.getTopCountryByValue = async (req, res) => {
     const tableName = getTableName(modifiedQuery.informationOf);
     const { whereClause, params } = buildClickHouseWhereClause(query, modifiedQuery);
 
-    const data = await getClickHouseGroupedData(tableName, whereClause, params, 'buyerCountry', 'totalValueInvoice');
+    const data = await getClickHouseGroupedData(tableName, whereClause, 'buyerCountry', 'totalValueInvoice');
 
     return res.status(200).json({
       statusCode: 200,
@@ -364,7 +444,7 @@ exports.getTopIndianPortByValue = async (req, res) => {
     const tableName = getTableName(modifiedQuery.informationOf);
     const { whereClause, params } = buildClickHouseWhereClause(query, modifiedQuery);
 
-    const data = await getClickHouseGroupedData(tableName, whereClause, params, 'portOfOrigin', 'totalValueInvoice');
+    const data = await getClickHouseGroupedData(tableName, whereClause, 'portOfOrigin', 'totalValueInvoice');
 
     return res.status(200).json({
       statusCode: 200,
@@ -407,13 +487,14 @@ exports.getSummaryStats = async (req, res) => {
     `;
 
     const result = await clickhouse.query({
-      query: summaryQuery,
-      params
-    }).json();
+      query: summaryQuery
+    });
 
+    const resultData = await result.json();
+    const rows = resultData && resultData.data ? resultData.data : resultData;
     return res.status(200).json({
       statusCode: 200,
-      metrics: { summaryStats: result.data[0] || {} },
+      metrics: { summaryStats: rows[0] || {} },
       query
     });
   } catch (error) {
@@ -455,11 +536,12 @@ exports.getFilterValues = async (req, res) => {
       `;
 
       const result = await clickhouse.query({
-        query: filterQuery,
-        params
-      }).json();
+        query: filterQuery
+      });
 
-      return [key, result.data.map(item => item.value)];
+      const resultData = await result.json();
+      const rows = resultData && resultData.data ? resultData.data : resultData;
+      return [key, rows.map(item => item.value)];
     });
 
     const filterResults = await Promise.all(filterPromises);
@@ -505,13 +587,14 @@ exports.getFilterMetadata = async (req, res) => {
     `;
 
     const result = await clickhouse.query({
-      query: metadataQuery,
-      params
-    }).json();
+      query: metadataQuery
+    });
 
+    const resultData = await result.json();
+    const rows = resultData && resultData.data ? resultData.data : resultData;
     return res.status(200).json({
       statusCode: 200,
-      metrics: { filterMetadata: result.data[0] || {} },
+      metrics: { filterMetadata: rows[0] || {} },
       query
     });
   } catch (error) {
@@ -538,24 +621,26 @@ exports.searchFilterValues = async (req, res) => {
       });
     }
 
+    const escapedSearch = search.replace(/'/g, "''"); // Escape single quotes
     const searchQuery = `
       SELECT DISTINCT ${field} as value
       FROM ${DATABASE_NAME}.${tableName}
-      WHERE ${field} ILIKE {search:String}
+      WHERE ${field} ILIKE '%${escapedSearch}%'
       AND ${field} IS NOT NULL
       AND ${field} != ''
       ORDER BY ${field}
-      LIMIT {limit:UInt32}
+      LIMIT ${limit}
     `;
 
     const result = await clickhouse.query({
-      query: searchQuery,
-      params: { search: `%${search}%`, limit }
-    }).json();
+      query: searchQuery
+    });
 
+    const resultData = await result.json();
+    const rows = resultData && resultData.data ? resultData.data : resultData;
     return res.status(200).json({
       statusCode: 200,
-      metrics: { searchResults: result.data.map(item => item.value) },
+      metrics: { searchResults: rows.map(item => item.value) },
       query
     });
   } catch (error) {
@@ -584,11 +669,10 @@ exports.getFilterValuesByField = async (req, res) => {
     }
 
     let whereCondition = `WHERE ${field} IS NOT NULL AND ${field} != ''`;
-    let queryParams = { limit, offset };
 
     if (search) {
-      whereCondition += ` AND ${field} ILIKE {search:String}`;
-      queryParams.search = `%${search}%`;
+      const escapedSearch = search.replace(/'/g, "''"); // Escape single quotes
+      whereCondition += ` AND ${field} ILIKE '%${escapedSearch}%'`;
     }
 
     const valuesQuery = `
@@ -599,19 +683,20 @@ exports.getFilterValuesByField = async (req, res) => {
       ${whereCondition}
       GROUP BY ${field}
       ORDER BY count DESC, ${field}
-      LIMIT {limit:UInt32} OFFSET {offset:UInt32}
+      LIMIT ${limit} OFFSET ${offset}
     `;
 
     const result = await clickhouse.query({
-      query: valuesQuery,
-      params: queryParams
-    }).json();
+      query: valuesQuery
+    });
 
+    const resultData = await result.json();
+    const rows = resultData && resultData.data ? resultData.data : resultData;
     return res.status(200).json({
       statusCode: 200,
       metrics: { 
         field,
-        values: result.data.map(item => ({
+        values: rows.map(item => ({
           value: item.value,
           count: parseInt(item.count)
         }))
@@ -623,6 +708,86 @@ exports.getFilterValuesByField = async (req, res) => {
     return res.status(500).json({
       statusCode: 500,
       message: 'Internal server error'
+    });
+  }
+}; 
+
+// COMPREHENSIVE METRICS API - Combines all top metrics in a single endpoint
+exports.getAllTopMetrics = async (req, res) => {
+  try {
+    const query = req.query;
+    const modifiedQuery = queryModifier(query);
+    const tableName = getTableName(modifiedQuery.informationOf);
+    const { whereClause, params } = buildClickHouseWhereClause(query, modifiedQuery);
+
+    console.log('Debug - Query:', query);
+    console.log('Debug - Modified Query:', modifiedQuery);
+    console.log('Debug - Where Clause:', whereClause);
+    console.log('Debug - Table Name:', tableName);
+
+    // Define all metrics to fetch
+    const metricsConfig = [
+      // Quantity-based metrics
+      { groupBy: 'buyer', aggregate: 'quantity', key: 'topBuyersByQuantity' },
+      { groupBy: 'year', aggregate: 'quantity', key: 'topYearsByQuantity' },
+      { groupBy: 'H_S_Code', aggregate: 'quantity', key: 'topHSCodeByQuantity' },
+      { groupBy: 'supplier', aggregate: 'quantity', key: 'topSuppliersByQuantity' },
+      { groupBy: 'buyerCountry', aggregate: 'quantity', key: 'topCountryByQuantity' },
+      { groupBy: 'portOfOrigin', aggregate: 'quantity', key: 'topIndianPortByQuantity' },
+      
+      // Value-based metrics
+      { groupBy: 'buyer', aggregate: 'totalValueInvoice', key: 'topBuyersByValue' },
+      { groupBy: 'year', aggregate: 'totalValueInvoice', key: 'topYearsByValue' },
+      { groupBy: 'H_S_Code', aggregate: 'totalValueInvoice', key: 'topHSCodeByValue' },
+      { groupBy: 'supplier', aggregate: 'totalValueInvoice', key: 'topSuppliersByValue' },
+      { groupBy: 'buyerCountry', aggregate: 'totalValueInvoice', key: 'topCountryByValue' },
+      { groupBy: 'portOfOrigin', aggregate: 'totalValueInvoice', key: 'topIndianPortByValue' }
+    ];
+
+    // Fetch all metrics concurrently
+    const metricsPromises = metricsConfig.map(async (config) => {
+      try {
+        const data = await getClickHouseGroupedData(tableName, whereClause, config.groupBy, config.aggregate);
+        return { [config.key]: data };
+      } catch (error) {
+        console.error(`Error fetching ${config.key}:`, error.message);
+        return { [config.key]: [] };
+      }
+    });
+
+    // Wait for all metrics to complete
+    const metricsResults = await Promise.all(metricsPromises);
+    
+    // Combine all results into a single object
+    const allMetrics = metricsResults.reduce((acc, result) => {
+      return { ...acc, ...result };
+    }, {});
+
+    return res.status(200).json({
+      statusCode: 200,
+      metrics: allMetrics,
+      query,
+      summary: {
+        totalMetrics: metricsConfig.length,
+        tableName,
+        dateRange: {
+          startDate: modifiedQuery.startDate,
+          endDate: modifiedQuery.endDate
+        },
+        filters: {
+          searchType: modifiedQuery.searchType,
+          searchValue: modifiedQuery.searchValue,
+          informationOf: modifiedQuery.informationOf,
+          dataType: modifiedQuery.dataType
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching all top metrics:', error.message, error.stack);
+    return res.status(500).json({
+      statusCode: 500,
+      message: 'Internal server error',
+      error: error.message
     });
   }
 }; 

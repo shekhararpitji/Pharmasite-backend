@@ -23,25 +23,24 @@ exports.queryModifier = (query) => {
     let endDate;
 
     // Process date range - defaults to last year if not provided
-    if (!query.duration) {
-        // Default to last year to current date for better performance
-        endDate = dayjs().format('YYYY-MM-DD 23:59:59');
-        startDate = dayjs().subtract(1, 'year').format('YYYY-MM-DD 00:00:00');
-    } else {
-        // Parse date range from frontend format (DD/MM/YYYY-DD/MM/YYYY)
-        const dateRange = query.duration.split('-')
-        startDate = dayjs(dateRange[0], 'DD/MM/YYYY').format('YYYY-MM-DD 00:00:00');
-        endDate = dayjs(dateRange[1], 'DD/MM/YYYY').format('YYYY-MM-DD 23:59:59');
-    }
+    // if (!query.duration) {
+    //     // Default to last year to current date for better performance
+    //     endDate = dayjs().format('YYYY-MM-DD 23:59:59');
+    //     startDate = dayjs().subtract(1, 'year').format('YYYY-MM-DD 00:00:00');
+    // } else {
+    //     // Parse date range from frontend format (DD/MM/YYYY-DD/MM/YYYY)
+    //     const dateRange = query.duration.split('-')
+    //     
+    // }
 
-    searchQuery.startDate = startDate;
-    searchQuery.endDate = endDate;
+    searchQuery.startDate = query.startDate ;
+    searchQuery.endDate = query.endDate;
 
     // Process search type - normalize field names for database compatibility
     let searchType;
     
     // Special handling for specific database field names
-    if (['CAS_Number', 'H_S_Code', '2_Digit_Code'].includes(query.searchType)) {
+    if (['CAS_Number', 'H_S_Code', '2_Digit_Code', 'productDescription'].includes(query.searchType)) {
         searchType = query.searchType
     } else {
         // Convert frontend field names to camelCase for database queries

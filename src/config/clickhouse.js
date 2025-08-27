@@ -5,9 +5,9 @@ dotenv.config();
 
 // Create a ClickHouse client with connection pooling
 const clickhouse = createClient({
-    url: process.env.CLICKHOUSE_URL,
-    username: process.env.CLICKHOUSE_USER,
-    password: process.env.CLICKHOUSE_PASSWORD,
+    url: 'http://localhost:8123',
+    username: 'root',
+    password: 'root',
   })
 
 

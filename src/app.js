@@ -9,6 +9,7 @@ const dataRoutes = require("./routes/dataRoutes");
 const metricsRoutes = require("./routes/metricsRoutes");
 const clickhouseMetricsRoutes = require("./routes/clickhouseMetricsRoutes");
 const subscriptionRoutes = require("./routes/subscriptionRoutes");
+const mergeRoutes = require("./routes/mergeRoutes");
 const syncDb = require('./models/sync.db')
 const cron = require('./crons/search-auto-suggestion');
 const aggregationCron = require('./crons/data-aggregation');
@@ -51,6 +52,7 @@ app.use('/api/data', dataRoutes);                    // Data operations & analyt
 app.use('/api/metrics', metricsRoutes);              // MySQL-based metrics
 app.use('/api/clickhouse-metrics', clickhouseMetricsRoutes); // ClickHouse analytics
 app.use('/api/subscription', subscriptionRoutes);     // Subscription management
+app.use('/api/merged-metrics', mergeRoutes);          // Combined metrics endpoints
 
 // Global error handler
 app.use((err, req, res, next) => {
@@ -76,10 +78,10 @@ const PORT = process.env.PORT || 8080;
 const startServer = async () => {
   try {
     // Step 1: Sync MySQL database (creates tables if they don't exist)
-    await syncDatabase(false);
+    // await syncDatabase(false);
     
     // Step 2: Initialize ClickHouse connection if enabled in environment
-    if (process.env.USE_CLICKHOUSE === 'true') {
+    
       try {
         console.log('Initializing ClickHouse connection...');
         const clickhouseReady = await initClickHouse();
@@ -94,8 +96,8 @@ const startServer = async () => {
       } catch (clickhouseError) {
         console.error('Error initializing ClickHouse:', clickhouseError);
         console.warn('Continuing without ClickHouse, analytics will use MySQL');
-      }
     }
+    
 
     // Step 3: Start the HTTP server
     app.listen(PORT, () => {

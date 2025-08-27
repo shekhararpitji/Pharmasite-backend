@@ -3,6 +3,9 @@ const router = express.Router();
 const clickhouseMetricsController = require('../controllers/clickhouseMetricsController.js');
 const cacheMiddleware = require('../middlewares/cacheMiddleware');
 
+// Comprehensive metrics route - combines all top metrics in a single API call
+router.get('/all-top-metrics', cacheMiddleware, clickhouseMetricsController.getAllTopMetrics);
+
 // Quantity-based metrics routes (ClickHouse optimized)
 router.get('/top-buyers-by-quantity', cacheMiddleware, clickhouseMetricsController.getTopBuyersByQuantity);
 router.get('/top-years-by-quantity', cacheMiddleware, clickhouseMetricsController.getTopYearsByQuantity);

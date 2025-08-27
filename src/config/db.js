@@ -18,8 +18,8 @@ dotenv.config();
  * Engine: MySQL
  * Host: 13.203.61.86 (Production server)
  */
-const sequelize = new Sequelize('pharma_db', 'root', 'Pharma@123', {
-  host: '13.203.61.86' || 'localhost',
+const sequelize = new Sequelize('pharmasite', 'root', 'root', {
+  host:  'localhost',
   dialect: 'mysql', 
   logging: false,   // Disable SQL query logging for production
   
@@ -36,7 +36,7 @@ const sequelize = new Sequelize('pharma_db', 'root', 'Pharma@123', {
     connectTimeout: 60000  // Connection timeout in milliseconds
   }
 });
-
+console.log('Connected to MySQL database');
 module.exports = sequelize;
 
 
