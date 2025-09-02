@@ -37,10 +37,10 @@ const fetchAndCacheData = async () => {
 };
 
 
-cron.schedule('0 0 * * *', () => {
-  console.log('Running the cron job to fetch and cache data...');
-  fetchAndCacheData();
-});
+// cron.schedule('0 0 * * *', () => {
+//   console.log('Running the cron job to fetch and cache data...');
+//   fetchAndCacheData();
+// });
 
 
 fetchAndCacheData();

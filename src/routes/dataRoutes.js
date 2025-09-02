@@ -203,4 +203,21 @@ router.get('/analytics/aggregated', cacheMiddleware, clickhouseService.getAggreg
  */
 router.post('/analytics/data', clickhouseService.getDataFromClickHouse);
 
+/**
+ * Enhanced ClickHouse Data API
+ * POST /api/data/clickhouse
+ * 
+ * Comprehensive data fetching from ClickHouse
+ * Similar to MySQL getData but optimized for ClickHouse performance
+ * 
+ * Features:
+ * - Pagination
+ * - Multi-field search
+ * - Date range filtering
+ * - Field-specific filters
+ * - Sorting options
+ * - Direct SQL queries with proper escaping
+ */
+router.post('/clickhouse', clickhouseService.getDataFromClickHouse);
+
 module.exports = router;

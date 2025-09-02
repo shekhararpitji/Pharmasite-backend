@@ -295,73 +295,137 @@ const getTimeSeriesData = async (req, res) => {
 /**
  * Get data records from ClickHouse with pagination (original function, optimized)
  */
+/**
+ * Enhanced Get data from ClickHouse with comprehensive filtering and pagination
+ * Similar to MySQL getData function but optimized for ClickHouse
+ * Uses direct SQL string concatenation with proper escaping (no parameterized queries)
+ */
 const getDataFromClickHouse = async (req, res) => {
   try {
-    const { 
-      startDate, 
-      endDate, 
-      buyer, 
-      supplier, 
-      product,
-      year,
-      limit = 1000,
-      offset = 0
-    } = req.body;
+    const query = req.query;
+    const page = parseInt(query.page) || 1;
+    const limit = parseInt(query.limit) || 50;
+    const offset = (page - 1) * limit;
 
-    let conditions = [];
-    let params = {};
+    const modifiedQuery = queryModifier(query);
+    const tableName = modifiedQuery.informationOf === 'import' ? 'import_data' : 'export_data';
 
-    // Use year filter for better performance when possible
-    if (year) {
-      conditions.push('year = {year:UInt16}');
-      params.year = year;
-    } else if (startDate && endDate) {
-      conditions.push('shippingBillDate BETWEEN {startDate:Date} AND {endDate:Date}');
-      params.startDate = startDate;
-      params.endDate = endDate;
+    // Build ClickHouse WHERE clause with direct string concatenation
+    let whereConditions = [];
+
+    // Date range filter
+    if (modifiedQuery.startDate && modifiedQuery.endDate) {
+      const startDate = modifiedQuery.startDate.replace(/'/g, "''"); // Escape single quotes
+      const endDate = modifiedQuery.endDate.replace(/'/g, "''"); // Escape single quotes
+      whereConditions.push(`shippingBillDate BETWEEN '${startDate}' AND '${endDate}'`);
     }
 
-    if (buyer) {
-      conditions.push('buyer ILIKE {buyer:String}');
-      params.buyer = `%${buyer}%`;
+    // Search filter
+    if (modifiedQuery.searchType && query.searchValue) {
+      const searchValues = Array.isArray(query.searchValue) ? query.searchValue : [query.searchValue];
+      const searchConditions = searchValues.map(value => {
+        const escapedValue = value.replace(/'/g, "''"); // Escape single quotes
+        return `${modifiedQuery.searchType} ILIKE '%${escapedValue}%'`;
+      });
+      whereConditions.push(`(${searchConditions.join(' OR ')})`);
     }
 
-    if (supplier) {
-      conditions.push('supplier ILIKE {supplier:String}');
-      params.supplier = `%${supplier}%`;
-    }
+    // Field mappings for filters
+    const fieldMappings = {
+      "Indian Port": "portOfOrigin",
+      "H S Code": "H_S_Code",
+      "Product Description": "productDescription",
+      "Quantity Units": "quantityUnit",
+      "Quantity": "standardQuantity",
+      "Unit Price": "standardUnitRateUSD",
+      "Currency": "currency",
+      "Product Name": "productName",
+      "Indian Company": "supplier",
+      "Foreign Company": "buyer",
+      "Foreign Country": "buyerCountry",
+      "CAS Number": "CAS_Number",
+      "Date of Shipment": "shippingBillDate"
+    };
 
-    if (product) {
-      conditions.push('productName ILIKE {product:String}');
-      params.product = `%${product}%`;
-    }
-
-    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
-
-    // Use PREWHERE for better performance on large datasets
-    const prewhere = year ? `PREWHERE year = {year:UInt16}` : '';
-
-    const queryResult = await clickhouse.query({
-      query: `
-        SELECT *
-        FROM ${DATABASE_NAME}.export_data
-        ${prewhere}
-        ${whereClause}
-        ORDER BY shippingBillDate DESC
-        LIMIT {limit:UInt32} OFFSET {offset:UInt32}
-      `,
-      params: {
-        ...params,
-        limit,
-        offset
+    // Apply additional filters
+    if (query.filters && typeof query.filters === 'object') {
+      for (const [displayName, values] of Object.entries(query.filters)) {
+        if (Array.isArray(values) && values.length > 0) {
+          const dbColumnName = fieldMappings[displayName] || displayName;
+          
+          // Handle numeric fields differently
+          const isNumericField = dbColumnName === 'quantity' || dbColumnName === 'totalValueInvoice' || dbColumnName === 'standardUnitRateUSD';
+          
+          if (isNumericField) {
+            // For numeric fields, filter out empty strings and convert to numbers
+            const numericValues = values.filter(v => v !== '' && v !== null && !isNaN(v));
+            if (numericValues.length > 0) {
+              const numericConditions = numericValues.map(value => {
+                return `${dbColumnName} = ${parseFloat(value)}`;
+              });
+              whereConditions.push(`(${numericConditions.join(' OR ')})`);
+            }
+          } else {
+            // For string fields, use normal string comparison with escaping
+            const stringConditions = values.map(value => {
+              const escapedValue = value.replace(/'/g, "''"); // Escape single quotes
+              return `${dbColumnName} = '${escapedValue}'`;
+            });
+            whereConditions.push(`(${stringConditions.join(' OR ')})`);
+          }
+        }
       }
-    });
-    const result = await queryResult.json();
+    }
 
-    res.json({ success: true, data: result.data, meta: result.meta });
+    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+
+    // Get total count
+    const countQuery = `
+      SELECT count(*) as totalCount
+      FROM ${DATABASE_NAME}.${tableName}
+      ${whereClause}
+    `;
+
+    const countResult = await clickhouse.query({
+      query: countQuery
+    });
+
+    const countData = await countResult.json();
+    const totalCount = countData && countData.data ? countData.data[0].totalCount : 0;
+
+    // Get paginated data
+    const dataQuery = `
+      SELECT *
+      FROM ${DATABASE_NAME}.${tableName}
+      ${whereClause}
+      ORDER BY shippingBillDate DESC
+      LIMIT ${limit} OFFSET ${offset}
+    `;
+
+    const dataResult = await clickhouse.query({
+      query: dataQuery
+    });
+
+    const resultData = await dataResult.json();
+    const data = resultData && resultData.data ? resultData.data : [];
+
+    return res.status(200).json({
+      statusCode: 200,
+      page,
+      limit,
+      totalRecords: totalCount,
+      totalPages: Math.ceil(totalCount / limit),
+      data,
+      query: modifiedQuery
+    });
+
   } catch (error) {
     console.error('Error fetching data from ClickHouse:', error);
-    res.status(500).json({ success: false, error: error.message });
+    return res.status(500).json({
+      statusCode: 500,
+      message: 'Internal server error',
+      error: error.message
+    });
   }
 };
 

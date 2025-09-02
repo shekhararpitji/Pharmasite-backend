@@ -159,18 +159,6 @@ exports.getAllUsers = async (filters = {}) => {
 
   return UserModel.findAll({
     where: whereClause,
-    include: [
-      {
-        model: UserModel,
-        as: 'parent',
-        attributes: ['id', 'name', 'email']
-      },
-      {
-        model: UserModel,
-        as: 'creator',
-        attributes: ['id', 'name', 'email']
-      }
-    ],
     order: [['createdAt', 'DESC']]
   });
 };

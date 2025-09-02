@@ -70,19 +70,11 @@ const UserModel = sequelize.define('User', {
     parentId: {
       type: DataTypes.INTEGER,
       allowNull: true,
-      references: {
-        model: 'Users',
-        key: 'id'
-      },
       comment: 'For kid accounts - references parent user ID'
     },
     createdBy: {
       type: DataTypes.INTEGER,
       allowNull: true,
-      references: {
-        model: 'Users',
-        key: 'id'
-      },
       comment: 'ID of the admin who created this account'
     },
     

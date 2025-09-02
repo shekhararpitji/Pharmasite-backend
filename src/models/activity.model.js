@@ -11,11 +11,7 @@ const ActivityModel = sequelize.define('Activity', {
   },
   userId: {
     type: DataTypes.INTEGER,
-    allowNull: false,
-    references: {
-      model: UserModel,
-      key: 'id'
-    }
+    allowNull: false
   },
   activityType: {
     type: DataTypes.ENUM('login', 'download', 'search', 'view'),
@@ -49,8 +45,6 @@ const ActivityModel = sequelize.define('Activity', {
   ]
 });
 
-// Relationship with User model
-ActivityModel.belongsTo(UserModel, { foreignKey: 'userId' });
-UserModel.hasMany(ActivityModel, { foreignKey: 'userId' });
+// Note: Relationships are defined in src/config/syncModels.js to avoid circular dependencies
 
 module.exports = ActivityModel; 

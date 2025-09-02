@@ -6,13 +6,10 @@ const dotenv = require('dotenv');
 const bodyParser = require("body-parser");
 const roleRoutes = require("./routes/roleRoutes");
 const dataRoutes = require("./routes/dataRoutes");
-const metricsRoutes = require("./routes/metricsRoutes");
 const clickhouseMetricsRoutes = require("./routes/clickhouseMetricsRoutes");
 const subscriptionRoutes = require("./routes/subscriptionRoutes");
-const mergeRoutes = require("./routes/mergeRoutes");
 // const syncDb = require('./models/sync.db')
 const cron = require('./crons/search-auto-suggestion');
-const aggregationCron = require('./crons/data-aggregation');
 const cookieParser = require('cookie-parser');
 const { initClickHouse } = require('./config/clickhouse');
 const { initClickHouseExport } = require('./models/clickhouse/export.model');
@@ -29,12 +26,12 @@ app.use(cors({
 }));
 
 // Rate limiting to prevent abuse - 100 requests per 15 minutes per IP
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
-  message: 'Too many requests from this IP, please try again later.'
-});
-app.use(limiter);
+// const limiter = rateLimit({
+//   windowMs: 1 * 60 * 1000, // 15 minutes
+//   max: 100, // limit each IP to 100 requests per windowMs
+//   message: 'Too many requests from this IP, please try again later.'
+// });
+// app.use(limiter);
 
 // Body parsing middleware
 app.use(bodyParser.json({ limit: '50mb' }));
@@ -49,10 +46,8 @@ app.get('/health', (req, res) => {
 // API Routes - All routes are prefixed with /api
 app.use('/api/auth', roleRoutes);                    // Authentication & user management
 app.use('/api/data', dataRoutes);                    // Data operations & analytics
-app.use('/api/metrics', metricsRoutes);              // MySQL-based metrics
 app.use('/api/clickhouse-metrics', clickhouseMetricsRoutes); // ClickHouse analytics
 app.use('/api/subscription', subscriptionRoutes);     // Subscription management
-app.use('/api/merged-metrics', mergeRoutes);          // Combined metrics endpoints
 
 // Global error handler
 app.use((err, req, res, next) => {

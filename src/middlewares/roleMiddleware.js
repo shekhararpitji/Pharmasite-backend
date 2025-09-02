@@ -1,6 +1,8 @@
 const jwt = require('jsonwebtoken');
 const UserModel = require('../models/user.model');
 const SubscriptionModel = require('../models/subscription.model');
+const dotenv = require('dotenv');
+dotenv.config();
 
 /**
  * Authentication Middleware - Verify JWT Token
@@ -32,7 +34,7 @@ const isLogedIn = async (req, res, next) => {
     }
 
     // Verify JWT token
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = jwt.verify(token, 'secret');
     
     // Check if user exists and is active
     const user = await UserModel.findByPk(decoded.id);

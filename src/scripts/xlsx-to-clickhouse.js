@@ -181,14 +181,12 @@ function cleanData(record) {
   // Clean dates
   if ('shippingBillDate' in record) {
     let dateValue = convertDateFormat(record.shippingBillDate);
-    console.log(dateValue);
     // if (dateValue instanceof Date) {
     //   dateValue = dateValue.toISOString().split('T')[0];
     // } else {
     //   dateValue = dateValue?.toString().trim() || '';
     //   dateValue = dateValue.split(' ')[0].trim();
     // }
-    console.log(dateValue);
     cleanedRecord.shippingBillDate = /^\d{4}-\d{2}-\d{2}$/.test(dateValue) ? dateValue : '1970-01-01';
   } else {
     cleanedRecord.shippingBillDate = '1970-01-01';
@@ -265,8 +263,6 @@ async function importXLSX(filePath, sheetName = null, batchSize = 50000) {
     
     // Log the first few records to help with debugging
     if (jsonData.length > 0) {
-      console.log('Sample record structure:', Object.keys(jsonData[0]));
-      console.log('First record sample:', JSON.stringify(jsonData[0], null, 2));
     }
     
     return new Promise((resolve, reject) => {
