@@ -13,12 +13,21 @@ const fieldMappings = {
   "Quantity Units": "quantityUnit",
   "Unit Price": "standardUnitRateUSD",
   "Currency": "currency",
-  "Product Name": "productName",
+   "Product Name": "productName",
   "Product Description": "productDescription",
   "Indian Company": "supplier",
   "Foreign Company": "buyer",
   "Foreign Country": "buyerCountry",
-  "CAS Number": "CAS_Number",
+ "CAS Number": "CAS_Number",
+};
+
+// Define which fields are numeric (Float64/Int64) to handle empty string conversion
+const numericFields = {
+  "standardUnitRateUSD": true,
+  "quantity": true,
+  "totalValueInvoice": true,
+  "totalValueUSD": true,
+  "standardQuantity": true
 };
 
 // Helper function to convert datetime string to date format
@@ -38,6 +47,24 @@ const convertToDateString = (dateString) => {
   } catch (error) {
     console.warn('Invalid date format:', dateString);
     return null;
+  }
+};
+
+// Helper function to build safe field conditions for numeric fields
+const buildFieldCondition = (dbColumnName, searchCondition = '') => {
+  const isNumeric = numericFields[dbColumnName];
+  
+  if (isNumeric) {
+    // For numeric fields, use toString() to convert to string and handle NULL/empty values
+    return `AND toString(${dbColumnName}) IS NOT NULL 
+            AND toString(${dbColumnName}) != '' 
+            AND toString(${dbColumnName}) != '0' 
+            ${searchCondition}`;
+  } else {
+    // For string fields, use the original logic
+    return `AND ${dbColumnName} IS NOT NULL 
+            AND ${dbColumnName} != '' 
+            ${searchCondition}`;
   }
 };
 
@@ -226,17 +253,21 @@ exports.getFilterValues = async (req, res) => {
       let searchCondition = '';
       if (search) {
         const escapedSearch = search.replace(/'/g, "''"); // Escape single quotes
-        searchCondition = `AND ${dbColumnName} ILIKE '%${escapedSearch}%'`;
+        const isNumeric = numericFields[dbColumnName];
+        if (isNumeric) {
+          searchCondition = `AND toString(${dbColumnName}) ILIKE '%${escapedSearch}%'`;
+        } else {
+          searchCondition = `AND ${dbColumnName} ILIKE '%${escapedSearch}%'`;
+        }
       }
 
       // Get total count first
+      const fieldCondition = buildFieldCondition(dbColumnName, searchCondition);
       const countQuery = `
         SELECT count(DISTINCT ${dbColumnName}) as totalCount
         FROM ${DATABASE_NAME}.${tableName}
         ${whereClause}
-        AND ${dbColumnName} IS NOT NULL
-        AND ${dbColumnName} != ''
-        ${searchCondition}
+        ${fieldCondition}
       `;
 
       const countResult = await clickhouse.query({
@@ -251,9 +282,7 @@ exports.getFilterValues = async (req, res) => {
         SELECT DISTINCT ${dbColumnName} as value
         FROM ${DATABASE_NAME}.${tableName}
         ${whereClause}
-        AND ${dbColumnName} IS NOT NULL
-        AND ${dbColumnName} != ''
-        ${searchCondition}
+        ${fieldCondition}
         ORDER BY ${dbColumnName}
         LIMIT ${limit} OFFSET ${offset}
       `;
@@ -292,17 +321,21 @@ exports.getFilterValues = async (req, res) => {
       let searchCondition = '';
       if (search) {
         const escapedSearch = search.replace(/'/g, "''"); // Escape single quotes
-        searchCondition = `AND ${dbColumnName} ILIKE '%${escapedSearch}%'`;
+        const isNumeric = numericFields[dbColumnName];
+        if (isNumeric) {
+          searchCondition = `AND toString(${dbColumnName}) ILIKE '%${escapedSearch}%'`;
+        } else {
+          searchCondition = `AND ${dbColumnName} ILIKE '%${escapedSearch}%'`;
+        }
       }
 
       // Get total count for this field
+      const fieldCondition = buildFieldCondition(dbColumnName, searchCondition);
       const countQuery = `
         SELECT count(DISTINCT ${dbColumnName}) as totalCount
         FROM ${DATABASE_NAME}.${tableName}
         ${whereClause}
-        AND ${dbColumnName} IS NOT NULL
-        AND ${dbColumnName} != ''
-        ${searchCondition}
+        ${fieldCondition}
       `;
 
       const countResult = await clickhouse.query({
@@ -317,9 +350,7 @@ exports.getFilterValues = async (req, res) => {
         SELECT DISTINCT ${dbColumnName} as value
         FROM ${DATABASE_NAME}.${tableName}
         ${whereClause}
-        AND ${dbColumnName} IS NOT NULL
-        AND ${dbColumnName} != ''
-        ${searchCondition}
+        ${fieldCondition}
         ORDER BY ${dbColumnName}
         LIMIT ${limit} OFFSET ${offset}
       `;
@@ -390,12 +421,12 @@ exports.getFilterMetadata = async (req, res) => {
 
     // Get metadata for each field
     const metadataPromises = Object.entries(fieldMappings).map(async ([displayName, dbColumnName]) => {
+      const fieldCondition = buildFieldCondition(dbColumnName);
       const countQuery = `
         SELECT count(DISTINCT ${dbColumnName}) as uniqueValueCount
         FROM ${DATABASE_NAME}.${tableName}
         ${whereClause}
-        AND ${dbColumnName} IS NOT NULL
-        AND ${dbColumnName} != ''
+        ${fieldCondition}
       `;
 
       const result = await clickhouse.query({
@@ -451,14 +482,17 @@ exports.searchFilterValues = async (req, res) => {
     // Search across all fields
     const searchPromises = Object.entries(fieldMappings).map(async ([displayName, dbColumnName]) => {
       const escapedSearch = searchTerm.replace(/'/g, "''"); // Escape single quotes
+      const isNumeric = numericFields[dbColumnName];
+      const searchCondition = isNumeric 
+        ? `AND toString(${dbColumnName}) ILIKE '%${escapedSearch}%'`
+        : `AND ${dbColumnName} ILIKE '%${escapedSearch}%'`;
       
+      const fieldCondition = buildFieldCondition(dbColumnName, searchCondition);
       const searchQuery = `
         SELECT DISTINCT ${dbColumnName} as value
         FROM ${DATABASE_NAME}.${tableName}
         ${whereClause}
-        AND ${dbColumnName} IS NOT NULL
-        AND ${dbColumnName} != ''
-        AND ${dbColumnName} ILIKE '%${escapedSearch}%'
+        ${fieldCondition}
         ORDER BY ${dbColumnName}
         LIMIT ${limit}
       `;
@@ -530,17 +564,21 @@ exports.getFilterValuesByField = async (req, res) => {
     let searchCondition = '';
     if (search) {
       const escapedSearch = search.replace(/'/g, "''"); // Escape single quotes
-      searchCondition = `AND ${dbColumnName} ILIKE '%${escapedSearch}%'`;
+      const isNumeric = numericFields[dbColumnName];
+      if (isNumeric) {
+        searchCondition = `AND toString(${dbColumnName}) ILIKE '%${escapedSearch}%'`;
+      } else {
+        searchCondition = `AND ${dbColumnName} ILIKE '%${escapedSearch}%'`;
+      }
     }
 
     // Get total count
+    const fieldCondition = buildFieldCondition(dbColumnName, searchCondition);
     const countQuery = `
       SELECT count(DISTINCT ${dbColumnName}) as totalCount
       FROM ${DATABASE_NAME}.${tableName}
       ${whereClause}
-      AND ${dbColumnName} IS NOT NULL
-      AND ${dbColumnName} != ''
-      ${searchCondition}
+      ${fieldCondition}
     `;
 
     const countResult = await clickhouse.query({
@@ -557,9 +595,7 @@ exports.getFilterValuesByField = async (req, res) => {
         count(*) as usage_count
       FROM ${DATABASE_NAME}.${tableName}
       ${whereClause}
-      AND ${dbColumnName} IS NOT NULL
-      AND ${dbColumnName} != ''
-      ${searchCondition}
+      ${fieldCondition}
       GROUP BY ${dbColumnName}
       ORDER BY ${dbColumnName} ${sortOrder}
       LIMIT ${limit} OFFSET ${offset}
