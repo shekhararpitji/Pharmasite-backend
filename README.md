@@ -70,6 +70,9 @@ The following endpoints use ClickHouse for improved analytics performance:
 
 - `GET /api/data/analytics/metrics`: Get metrics data from ClickHouse
 - `POST /api/data/analytics/data`: Get data records from ClickHouse with pagination
+- `GET /api/clickhouse-metrics/suggestion`: Get auto-suggestions from ClickHouse data
+
+For detailed API documentation, see [CLICKHOUSE_SUGGESTIONS_API.md](CLICKHOUSE_SUGGESTIONS_API.md).
 
 ## Performance Optimization
 

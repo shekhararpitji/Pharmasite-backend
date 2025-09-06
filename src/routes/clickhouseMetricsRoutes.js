@@ -8,7 +8,9 @@ const cacheMiddleware = require('../middlewares/cacheMiddleware');
 router.get('/all-top-metrics', cacheMiddleware, clickhouseMetricsController.getAllTopMetrics);
 router.get('/suggestion', cacheMiddleware, clickhouseMetricsController.getClickHouseSuggestedData);
 router.get('/clickhouse', cacheMiddleware, clickhouseMetricsController.getDataFromClickHouse);
-router.get('/download-xlsx', clickhouseMetricsController.downloadDataAsXLSX);
+router.get('/download-csv', clickhouseMetricsController.downloadDataAsCSV);
+router.get('/download-csv-stream', clickhouseMetricsController.downloadDataAsCSVStream);
+// router.get('/download-csv-pipeline', clickhouseMetricsController.downloadDataAsCSVPipeline);
 
 
 

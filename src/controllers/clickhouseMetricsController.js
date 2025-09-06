@@ -1,6 +1,9 @@
 const { clickhouse } = require('../config/clickhouse');
 const { queryModifier } = require('../utils/queryModifier');
 const ExcelJS = require('exceljs');
+const { pipeline } = require('stream');
+const { promisify } = require('util');
+const pipelineAsync = promisify(pipeline);
 const DATABASE_NAME = process.env.CLICKHOUSE_DB || 'pharma_analytics';
 
 // Field mappings for frontend vs database field names
@@ -800,13 +803,206 @@ exports.getDataFromClickHouse = async (req, res) => {
 };
 
 // Download data from ClickHouse as XLSX file
-exports.downloadDataAsXLSX = async (req, res) => {
+// exports.downloadDataAsCSV = async (req, res) => {
+//   try {
+//     const query = req.query;
+//     const modifiedQuery = queryModifier(query);
+//     const tableName = getTableName(modifiedQuery.informationOf);
+//     const { whereClause, params } = buildClickHouseWhereClause(query, modifiedQuery);
+
+//     // Support for custom columns selection
+//     const selectedColumns = query.columns ? query.columns.split(',') : null;
+
+//     console.log('Debug - Download Query:', query);
+//     console.log('Debug - Download Modified Query:', modifiedQuery);
+//     console.log('Debug - Download Where Clause:', whereClause);
+//     console.log('Debug - Download Table Name:', tableName);
+
+//     // First, get the total count to check if data exists
+//     const countQuery = `
+//       SELECT count(*) as totalCount
+//       FROM ${DATABASE_NAME}.${tableName}
+//       ${whereClause}
+//     `;
+
+//     const countResult = await clickhouse.query({
+//       query: countQuery
+//     });
+
+//     const countData = await countResult.json();
+//     const totalCount = countData && countData.data ? countData.data[0].totalCount : 0;
+
+//     if (totalCount === 0) {
+//       return res.status(404).json({
+//         statusCode: 404,
+//         message: 'No data found for the specified criteria'
+//       });
+//     }
+
+//     // Check if the dataset is too large (limit to 1,000,000 records for streaming)
+//     const maxRecords = 100000;
+//     if (totalCount > maxRecords) {
+//       return res.status(413).json({
+//         statusCode: 413,
+//         message: `Dataset too large. Found ${totalCount} records, maximum allowed is ${maxRecords}. Please apply more specific filters.`
+//       });
+//     }
+
+//     // Get all data (no pagination for download)
+//     const selectClause = selectedColumns ? selectedColumns.join(', ') : '*';
+//     const dataQuery = `
+//       SELECT ${selectClause}
+//       FROM ${DATABASE_NAME}.${tableName}
+//       ${whereClause}
+//       ORDER BY shippingBillDate DESC
+//     `;
+
+//     // Set response headers for file download
+//     res.setHeader('Content-Type', 'text/csv');
+//     res.setHeader('Content-Disposition', `attachment; filename="pharmaceutical_data.csv"`);
+//     res.setHeader('Cache-Control', 'no-cache');
+//     res.setHeader('X-Total-Records', totalCount);
+//     res.setHeader('X-Data-Type', `pharmaceutical_data.csv`);
+
+//     // Define column headers with better formatting
+//     const columnMappings = {
+//       'shippingBillDate': 'Date of Shipment',
+//       'portOfOrigin': 'Indian Port',
+//       'portOfDeparture': 'Port of Departure',
+//       'H_S_Code': 'HS Code',
+//       'productDescription': 'Product Description',
+//       'productName': 'Product Name',
+//       'standardQuantity': 'Quantity',
+//       'quantityUnit': 'Quantity Units',
+//       'standardUnitRateUSD': 'Unit Price (USD)',
+//       'currency': 'Currency',
+//       'supplier': 'Indian Company',
+//       'buyer': 'Foreign Company',
+//       'buyerCountry': 'Foreign Country',
+//       'supplierCountry': 'Supplier Country',
+//       'CAS_Number': 'CAS Number',
+//       'totalValueInvoice': 'Total Value',
+//       'region': 'Region',
+//       'year': 'Year',
+//       'month': 'Month',
+//       'yearMonth': 'Year-Month'
+//     };
+
+//     // Helper function to escape CSV values
+//     const escapeCSV = (value) => {
+//       if (value === null || value === undefined) return '';
+//       const str = String(value);
+//       // If the value contains comma, newline, or double quote, wrap in quotes and escape quotes
+//       if (str.includes(',') || str.includes('\n') || str.includes('\r') || str.includes('"')) {
+//         return `"${str.replace(/"/g, '""')}"`;
+//       }
+//       return str;
+//     };
+
+//     // Helper function to get readable header name
+//     const getReadableHeader = (key) => {
+//       return columnMappings[key] || key.replace(/([A-Z])/g, ' $1')
+//         .replace(/^./, str => str.toUpperCase())
+//         .replace(/_/g, ' ')
+//         .trim();
+//     }
+
+//     let headersWritten = false;
+//     let headers = [];
+//     let recordCount = 0;
+
+//     // Use streaming query from ClickHouse
+//     const resultSet = await clickhouse.query({
+//       query: dataQuery,
+//       format: 'JSONEachRow'
+//     });
+
+//     // Get the stream from the result set
+//     const stream = resultSet.stream();
+
+//     // Handle the streaming response
+//     stream.on('data', (chunk) => {
+//       try {
+//         // Parse the chunk (each line is a JSON object)
+//         const lines = chunk.toString().split('\n').filter(line => line.trim());
+        
+//         for (const line of lines) {
+//           try {
+//             const row = JSON.parse(line);
+            
+//             // Write headers on first row
+//             if (!headersWritten) {
+//               headers = Object.keys(row).map(key => getReadableHeader(key));
+//               const headerRow = headers.map(escapeCSV).join(',') + '\n';
+//               res.write(headerRow);
+//               headersWritten = true;
+//             }
+
+//             // Write data row
+//             const rowData = headers.map(header => {
+//               const originalKey = Object.keys(row).find(key => getReadableHeader(key) === header);
+//               return escapeCSV(row[originalKey] || '');
+//             });
+            
+//             const csvRow = rowData.join(',') + '\n';
+//             res.write(csvRow);
+//             recordCount++;
+
+//           } catch (parseError) {
+//             console.warn('Error parsing JSON line:', parseError.message, 'Line:', line);
+//           }
+//         }
+//       } catch (chunkError) {
+//         console.warn('Error processing chunk:', chunkError.message);
+//       }
+//     });
+
+//     stream.on('end', () => {
+//       console.log(`CSV streaming completed: pharmaceutical_data.csv with ${recordCount} records`);
+//       res.end();
+//     });
+
+//     stream.on('error', (error) => {
+//       console.error('Stream error:', error.message, error.stack);
+//       if (!res.headersSent) {
+//         res.status(500).json({
+//           statusCode: 500,
+//           message: 'Error streaming data',
+//           error: error.message
+//         });
+//       } else {
+//         res.end();
+//       }
+//     });
+
+//     // Handle client disconnect
+//     req.on('close', () => {
+//       console.log('Client disconnected during CSV download');
+//       stream.destroy();
+//     });
+
+//   } catch (error) {
+//     console.error('Error generating CSV file:', error.message, error.stack);
+
+//     // Check if response has already been sent
+//     if (!res.headersSent) {
+//       return res.status(500).json({
+//         statusCode: 500,
+//         message: 'Internal server error',
+//         error: error.message
+//       });
+//     }
+//   }
+// };
+
+
+exports.downloadDataAsCSV = async (req, res) => {
   try {
     const query = req.query;
     const modifiedQuery = queryModifier(query);
     const tableName = getTableName(modifiedQuery.informationOf);
     const { whereClause, params } = buildClickHouseWhereClause(query, modifiedQuery);
-    
+
     // Support for custom columns selection
     const selectedColumns = query.columns ? query.columns.split(',') : null;
 
@@ -836,7 +1032,7 @@ exports.downloadDataAsXLSX = async (req, res) => {
       });
     }
 
-    // Check if the dataset is too large (limit to 100,000 records for performance)
+    // Check if the dataset is too large (limit to 100,000 records)
     const maxRecords = 100000;
     if (totalCount > maxRecords) {
       return res.status(413).json({
@@ -846,7 +1042,7 @@ exports.downloadDataAsXLSX = async (req, res) => {
     }
 
     // Get all data (no pagination for download)
-    const selectClause = selectedColumns ? selectedColumns.join(', ') : '*';
+    const selectClause = selectedColumns ? selectedColumns.join(', ') : 'shippingBillDate, portOfOrigin, portOfDeparture, H_S_Code, productDescription, productName, standardQuantity, quantityUnit, standardUnitRateUSD, currency, supplier, buyer, buyerCountry, supplierCountry, CAS_Number, totalValueInvoice, region, year';
     const dataQuery = `
       SELECT ${selectClause}
       FROM ${DATABASE_NAME}.${tableName}
@@ -854,16 +1050,21 @@ exports.downloadDataAsXLSX = async (req, res) => {
       ORDER BY shippingBillDate DESC
     `;
 
-    const dataResult = await clickhouse.query({
-      query: dataQuery
+    // Execute query and get all results
+    const result = await clickhouse.query({
+      query: dataQuery,
+      format: 'JSON'
     });
 
-    const resultData = await dataResult.json();
-    const data = resultData && resultData.data ? resultData.data : [];
+    const data = await result.json();
+    const rows = data.data || [];
 
-    // Create Excel workbook and worksheet
-    const workbook = new ExcelJS.Workbook();
-    const worksheet = workbook.addWorksheet('Pharmaceutical Data');
+    if (rows.length === 0) {
+      return res.status(404).json({
+        statusCode: 404,
+        message: 'No data found for the specified criteria'
+      });
+    }
 
     // Define column headers with better formatting
     const columnMappings = {
@@ -889,100 +1090,249 @@ exports.downloadDataAsXLSX = async (req, res) => {
       'yearMonth': 'Year-Month'
     };
 
-    // Get headers from the first data row and map them to readable names
-    const headers = Object.keys(data[0]).map(key => {
-      return columnMappings[key] || key.replace(/([A-Z])/g, ' $1')
-                                      .replace(/^./, str => str.toUpperCase())
-                                      .replace(/_/g, ' ')
-                                      .trim();
-    });
-
-    // Add headers to worksheet
-    worksheet.addRow(headers);
-
-    // Style the header row
-    const headerRow = worksheet.getRow(1);
-    headerRow.font = { bold: true, size: 12 };
-    headerRow.fill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: 'FF4472C4' }
-    };
-    headerRow.alignment = { horizontal: 'center', vertical: 'middle' };
-
-    // Add data rows with proper formatting
-    data.forEach((row, index) => {
-      const rowData = headers.map(header => {
-        const originalKey = Object.keys(data[0]).find(key => 
-          columnMappings[key] === header || 
-          key.replace(/([A-Z])/g, ' $1')
-             .replace(/^./, str => str.toUpperCase())
-             .replace(/_/g, ' ')
-             .trim() === header
-        );
-        return row[originalKey] || '';
-      });
-      
-      const dataRow = worksheet.addRow(rowData);
-      
-      // Alternate row colors for better readability
-      if (index % 2 === 1) {
-        dataRow.fill = {
-          type: 'pattern',
-          pattern: 'solid',
-          fgColor: { argb: 'FFF2F2F2' }
-        };
+    // Helper function to escape CSV values
+    const escapeCSV = (value) => {
+      if (value === null || value === undefined) return '';
+      const str = String(value);
+      // If the value contains comma, newline, or double quote, wrap in quotes and escape quotes
+      if (str.includes(',') || str.includes('\n') || str.includes('\r') || str.includes('"')) {
+        return `"${str.replace(/"/g, '""')}"`;
       }
-    });
-
-    // Auto-fit columns and set minimum width
-    worksheet.columns.forEach(column => {
-      const maxLength = Math.max(
-        column.header.length,
-        ...column.values.slice(1).map(value => String(value).length)
-      );
-      column.width = Math.min(Math.max(maxLength + 2, 10), 50); // Min 10, Max 50
-    });
-
-    // Add a summary sheet
-    const summarySheet = workbook.addWorksheet('Summary');
-    summarySheet.addRow(['Export Summary']);
-    summarySheet.addRow(['']);
-    summarySheet.addRow(['Total Records', totalCount]);
-    summarySheet.addRow(['Data Type', modifiedQuery.informationOf]);
-    summarySheet.addRow(['Export Date', new Date().toLocaleString()]);
-    summarySheet.addRow(['Date Range', `${modifiedQuery.startDate || 'N/A'} to ${modifiedQuery.endDate || 'N/A'}`]);
-    summarySheet.addRow(['Search Type', modifiedQuery.searchType || 'N/A']);
-    summarySheet.addRow(['Search Value', Array.isArray(modifiedQuery.searchValue) ? modifiedQuery.searchValue.join(', ') : modifiedQuery.searchValue || 'N/A']);
-
-    // Style summary sheet
-    const summaryHeader = summarySheet.getRow(1);
-    summaryHeader.font = { bold: true, size: 14 };
-    summaryHeader.fill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: 'FF4472C4' }
+      return str;
     };
+
+    // Helper function to get readable header name
+    const getReadableHeader = (key) => {
+      return columnMappings[key] || key.replace(/([A-Z])/g, ' $1')
+        .replace(/^./, str => str.toUpperCase())
+        .replace(/_/g, ' ')
+        .trim();
+    };
+
+    // Get headers from first row
+    const headers = Object.keys(rows[0]).map(key => getReadableHeader(key));
+    
+    // Create CSV content
+    let csvContent = '';
+    
+    // Add headers
+    csvContent += headers.map(escapeCSV).join(',') + '\n';
+    
+    // Add data rows
+    for (const row of rows) {
+      const rowData = headers.map(header => {
+        const originalKey = Object.keys(row).find(key => getReadableHeader(key) === header);
+        return escapeCSV(row[originalKey] || '');
+      });
+      csvContent += rowData.join(',') + '\n';
+    }
+
+    // Set response headers for file download
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="pharmaceutical_data.csv"`);
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('X-Total-Records', totalCount);
+    res.setHeader('X-Data-Type', 'pharmaceutical_data.csv');
+
+    // Send the complete CSV content
+    res.send(csvContent);
+
+    console.log(`CSV download completed: pharmaceutical_data.csv with ${rows.length} records`);
+
+  } catch (error) {
+    console.error('Error generating CSV file:', error.message, error.stack);
+    
+    if (!res.headersSent) {
+      return res.status(500).json({
+        statusCode: 500,
+        message: 'Internal server error',
+        error: error.message
+      });
+    }
+  }
+};
+
+// Alternative streaming CSV download using Node.js Transform streams (more efficient for very large datasets)
+exports.downloadDataAsCSVStream = async (req, res) => {
+  try {
+    const query = req.query;
+    const modifiedQuery = queryModifier(query);
+    const tableName = getTableName(modifiedQuery.informationOf);
+    const { whereClause, params } = buildClickHouseWhereClause(query, modifiedQuery);
+
+    // Support for custom columns selection
+    const selectedColumns = query.columns ? query.columns.split(',') : null;
+
+    console.log('Debug - Stream Download Query:', query);
+    console.log('Debug - Stream Download Modified Query:', modifiedQuery);
+    console.log('Debug - Stream Download Where Clause:', whereClause);
+    console.log('Debug - Stream Download Table Name:', tableName);
+
+    // First, get the total count to check if data exists
+    const countQuery = `
+      SELECT count(*) as totalCount
+      FROM ${DATABASE_NAME}.${tableName}
+      ${whereClause}
+    `;
+
+    const countResult = await clickhouse.query({
+      query: countQuery
+    });
+
+    const countData = await countResult.json();
+    const totalCount = countData && countData.data ? countData.data[0].totalCount : 0;
+
+    if (totalCount === 0) {
+      return res.status(404).json({
+        statusCode: 404,
+        message: 'No data found for the specified criteria'
+      });
+    }
 
     // Generate filename with timestamp and data type
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-').split('T')[0];
-    const filename = `pharmaceutical_data_${modifiedQuery.informationOf}_${timestamp}.xlsx`;
+    const filename = `pharmaceutical_data_${modifiedQuery.informationOf}_${timestamp}.csv`;
 
     // Set response headers for file download
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('X-Total-Records', totalCount);
     res.setHeader('X-Data-Type', modifiedQuery.informationOf);
 
-    // Write the workbook to response
-    await workbook.xlsx.write(res);
+    // Define column headers with better formatting
+    const columnMappings = {
+      'shippingBillDate': 'Date of Shipment',
+      'portOfOrigin': 'Indian Port',
+      'portOfDeparture': 'Port of Departure',
+      'H_S_Code': 'HS Code',
+      'productDescription': 'Product Description',
+      'productName': 'Product Name',
+      'standardQuantity': 'Quantity',
+      'quantityUnit': 'Quantity Units',
+      'standardUnitRateUSD': 'Unit Price (USD)',
+      'currency': 'Currency',
+      'supplier': 'Indian Company',
+      'buyer': 'Foreign Company',
+      'buyerCountry': 'Foreign Country',
+      'supplierCountry': 'Supplier Country',
+      'CAS_Number': 'CAS Number',
+      'totalValueInvoice': 'Total Value',
+      'region': 'Region',
+      'year': 'Year',
+      'month': 'Month',
+      'yearMonth': 'Year-Month'
+    };
 
-    console.log(`Excel file generated successfully: ${filename} with ${data.length} records`);
+    // Helper function to escape CSV values
+    const escapeCSV = (value) => {
+      if (value === null || value === undefined) return '';
+      const str = String(value);
+      // If the value contains comma, newline, or double quote, wrap in quotes and escape quotes
+      if (str.includes(',') || str.includes('\n') || str.includes('\r') || str.includes('"')) {
+        return `"${str.replace(/"/g, '""')}"`;
+      }
+      return str;
+    };
+
+    // Helper function to get readable header name
+    const getReadableHeader = (key) => {
+      return columnMappings[key] || key.replace(/([A-Z])/g, ' $1')
+        .replace(/^./, str => str.toUpperCase())
+        .replace(/_/g, ' ')
+        .trim();
+    };
+
+    // Get all data using streaming with CSV format directly from ClickHouse
+    const selectClause = selectedColumns ? selectedColumns.join(', ') : '*';
+    const dataQuery = `
+      SELECT ${selectClause}
+      FROM ${DATABASE_NAME}.${tableName}
+      ${whereClause}
+      ORDER BY shippingBillDate DESC
+    `;
+
+    let headersWritten = false;
+    let headers = [];
+    let recordCount = 0;
+
+    // Use streaming query with CSV format from ClickHouse
+    const resultSet = await clickhouse.query({
+      query: dataQuery,
+      format: 'JSONEachRow'
+    });
+    // Get the stream from the result set
+    const stream = resultSet.stream();
+         
+    for await (const rows of resultSet.stream()) {
+      rows.forEach(row => {
+        console.log(row.json())
+      })
+    }
+    return;
+    // Handle the streaming response
+    stream.on('data', (chunk) => {
+      try {
+        const chunkStr = chunk.toString();
+        
+        // If headers haven't been written yet, we need to add our custom headers
+        if (!headersWritten) {
+          // Get column names from the first row of data
+          const firstLine = chunkStr.split('\n')[0];
+          if (firstLine) {
+            console.log('Debug - First Line:', firstLine);
+            const columnNames = firstLine.split(',');
+            headers = columnNames.map(name => getReadableHeader(name.trim().replace(/"/g, '')));
+            const headerRow = headers.map(escapeCSV).join(',') + '\n';
+            console.log('Debug - Header Row:', headerRow);
+            res.write(headerRow);
+            headersWritten = true;
+            
+            // Write the rest of the chunk (skip the first line which was the original header)
+            const remainingLines = chunkStr.split('\n').slice(1);
+            if (remainingLines.length > 0) {
+              // console.log('Debug - Remaining Lines:', remainingLines);
+              res.write(remainingLines.join('\n') + '\n');
+              recordCount += remainingLines.filter(line => line.trim()).length;
+            }
+          }
+        } else {
+          // Just write the chunk as is
+          res.write(chunkStr);
+          recordCount += chunkStr.split('\n').filter(line => line.trim()).length;
+        }
+      } catch (chunkError) {
+        console.warn('Error processing chunk:', chunkError.message);
+      }
+    });
+
+    stream.on('end', () => {
+      console.log(`CSV streaming completed: pharmaceutical_data.csv with ${recordCount} records`);
+      res.end();
+    });
+
+    stream.on('error', (error) => {
+      console.error('Stream error:', error.message, error.stack);
+      if (!res.headersSent) {
+        res.status(500).json({
+          statusCode: 500,
+          message: 'Error streaming data',
+          error: error.message
+        });
+      } else {
+        res.end();
+      }
+    });
+
+    // Handle client disconnect
+    req.on('close', () => {
+      console.log('Client disconnected during CSV download');
+      stream.destroy();
+    });
 
   } catch (error) {
-    console.error('Error generating Excel file:', error.message, error.stack);
-    
+    console.error('Error generating CSV file:', error.message, error.stack);
+
     // Check if response has already been sent
     if (!res.headersSent) {
       return res.status(500).json({
@@ -993,6 +1343,91 @@ exports.downloadDataAsXLSX = async (req, res) => {
     }
   }
 };
+
+// Most efficient streaming CSV download using pipeline (recommended approach)
+// exports.downloadDataAsCSVPipeline = async (req, res) => {
+//   try {
+//     const query = req.query;
+//     const modifiedQuery = queryModifier(query);
+//     const tableName = getTableName(modifiedQuery.informationOf);
+//     const { whereClause, params } = buildClickHouseWhereClause(query, modifiedQuery);
+
+//     // Support for custom columns selection
+//     const selectedColumns = query.columns ? query.columns.split(',') : null;
+
+//     console.log('Debug - Pipeline Download Query:', query);
+//     console.log('Debug - Pipeline Download Modified Query:', modifiedQuery);
+//     console.log('Debug - Pipeline Download Where Clause:', whereClause);
+//     console.log('Debug - Pipeline Download Table Name:', tableName);
+
+//     // First, get the total count to check if data exists
+//     const countQuery = `
+//       SELECT count(*) as totalCount
+//       FROM ${DATABASE_NAME}.${tableName}
+//       ${whereClause}
+//     `;
+
+//     const countResult = await clickhouse.query({
+//       query: countQuery
+//     });
+
+//     const countData = await countResult.json();
+//     const totalCount = countData && countData.data ? countData.data[0].totalCount : 0;
+
+//     if (totalCount === 0) {
+//       return res.status(404).json({
+//         statusCode: 404,
+//         message: 'No data found for the specified criteria'
+//       });
+//     }
+
+//     // Generate filename with timestamp and data type
+//     const timestamp = new Date().toISOString().replace(/[:.]/g, '-').split('T')[0];
+//     const filename = `pharmaceutical_data_${modifiedQuery.informationOf}_${timestamp}.csv`;
+
+//     // Set response headers for file download
+//     res.setHeader('Content-Type', 'text/csv');
+//     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+//     res.setHeader('Cache-Control', 'no-cache');
+//     res.setHeader('X-Total-Records', totalCount);
+//     res.setHeader('X-Data-Type', modifiedQuery.informationOf);
+
+//     // Get all data using streaming with CSVWithNames format (includes headers)
+//     const selectClause = selectedColumns ? selectedColumns.join(', ') : '*';
+//     const dataQuery = `
+//       SELECT ${selectClause}
+//       FROM ${DATABASE_NAME}.${tableName}
+//       ${whereClause}
+//       ORDER BY shippingBillDate DESC
+//     `;
+
+//     // Execute the query with CSVWithNames format (includes column headers)
+//     const resultSet = await clickhouse.query({
+//       query: dataQuery,
+//       format: 'CSVWithNames'
+//     });
+
+//     // Get the stream from the result set
+//     const stream = resultSet.stream();
+
+//     // Use pipeline to efficiently stream data from ClickHouse to HTTP response
+//     await pipelineAsync(stream, res);
+
+//     console.log(`CSV pipeline streaming completed: ${filename} with ${totalCount} records`);
+
+//   } catch (error) {
+//     console.error('Error generating CSV file:', error.message, error.stack);
+
+//     // Check if response has already been sent
+//     if (!res.headersSent) {
+//       return res.status(500).json({
+//         statusCode: 500,
+//         message: 'Internal server error',
+//         error: error.message
+//       });
+//     }
+//   }
+// };
 
 exports.getClickHouseSuggestedData = async (req, res) => {
   try {
