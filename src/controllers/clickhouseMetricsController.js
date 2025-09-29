@@ -552,11 +552,6 @@ exports.getFilterValuesByField = async (req, res) => {
     }
 
     const dbColumnName = fieldMappings[fieldName];
-    
-    // Pagination parameters
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 100;
-    const offset = (page - 1) * limit;
     const search = req.query.search || '';
     const sortOrder = req.query.sortOrder || 'ASC'; // ASC or DESC
 
@@ -598,7 +593,6 @@ exports.getFilterValuesByField = async (req, res) => {
       ${fieldCondition}
       GROUP BY ${dbColumnName}
       ORDER BY ${dbColumnName} ${sortOrder}
-      LIMIT ${limit} OFFSET ${offset}
     `;
 
     const distinctResult = await clickhouse.query({
@@ -614,20 +608,11 @@ exports.getFilterValuesByField = async (req, res) => {
       }))
       .filter(item => item.value);
 
-    const totalPages = Math.ceil(totalCount / limit);
-
     return res.status(200).json({
       statusCode: 200,
       field: fieldName,
       values,
-      pagination: {
-        currentPage: page,
-        totalPages,
-        totalItems: totalCount,
-        itemsPerPage: limit,
-        hasNextPage: page < totalPages,
-        hasPrevPage: page > 1
-      },
+      totalCount,
       search: search || null,
       sortOrder,
       query

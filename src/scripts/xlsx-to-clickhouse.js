@@ -20,7 +20,7 @@ const TABLE_NAME = 'export_data';
 program
   .version('1.0.0')
   .description('Import XLSX data into ClickHouse')
-  .requiredOption('-f, --file <path>', 'Path to input XLSX file')
+  .option('-f, --file <path>', 'Path to input XLSX file')
   .option('-s, --sheet <name>', 'Sheet name to import (defaults to first sheet)')
   .option('-b, --batch-size <number>', 'Number of rows per batch', 50000)
   .parse(process.argv);
@@ -381,30 +381,52 @@ async function importXLSX(filePath, sheetName = null, batchSize = 50000) {
 /**
  * Main function
  */
+/**
+ * Main function
+ */
 async function main() {
   try {
     const { file, sheet, batchSize } = options;
-    
-    // Validate file path
-    if (!fs.existsSync(file)) {
-      console.error(`File not found: ${file}`);
-      process.exit(1);
+
+    if (file) {
+      // Single file mode
+      if (!fs.existsSync(file)) {
+        console.error(`File not found: ${file}`);
+        process.exit(1);
+      }
+
+      const success = await importXLSX(file, sheet, batchSize);
+      if (!success) {
+        console.error('Import failed');
+        process.exit(1);
+      }
+    } else {
+      // Multi-file mode (1.xlsx → 40.xlsx)
+      const folder = path.join(__dirname, "../../data/data2");
+      for (let i = 1; i <= 20; i++) {
+        const filePath = path.join(folder, `${i}.xlsx`);
+        if (!fs.existsSync(filePath)) {
+          console.warn(`⚠️ File not found: ${filePath}, skipping...`);
+          continue;
+        }
+
+        console.log(`\n📂 Starting import for file ${i}.xlsx`);
+        const success = await importXLSX(filePath, sheet, batchSize);
+        if (!success) {
+          console.error(`❌ Import failed for file ${i}.xlsx`);
+        } else {
+          console.log(`✅ Finished import for file ${i}.xlsx`);
+        }
+      }
     }
-    
-    // Import XLSX
-    const success = await importXLSX(file, sheet, batchSize);
-    
-    if (!success) {
-      console.error('Import failed');
-      process.exit(1);
-    }
-    
+
     process.exit(0);
   } catch (error) {
     console.error('Error:', error);
     process.exit(1);
   }
 }
+
 
 // Run the script
 main(); 
