@@ -313,11 +313,17 @@ const getDataFromClickHouse = async (req, res) => {
     // Build ClickHouse WHERE clause with direct string concatenation
     let whereConditions = [];
 
-    // Date range filter
+    // Date range filter - both import and export now use shippingBillDate
+    const dateField = 'shippingBillDate';
     if (modifiedQuery.startDate && modifiedQuery.endDate) {
       const startDate = modifiedQuery.startDate.replace(/'/g, "''"); // Escape single quotes
       const endDate = modifiedQuery.endDate.replace(/'/g, "''"); // Escape single quotes
-      whereConditions.push(`shippingBillDate BETWEEN '${startDate}' AND '${endDate}'`);
+      whereConditions.push(`toDate(${dateField}) BETWEEN toDate('${startDate}') AND toDate('${endDate}')`);
+      // Also filter out null dates and invalid dates - use proper date type filtering
+      whereConditions.push(`${dateField} IS NOT NULL AND ${dateField} != '1970-01-01'`);
+    } else {
+      // Still filter out null dates even when no date range is specified
+      whereConditions.push(`${dateField} IS NOT NULL AND ${dateField} != '1970-01-01'`);
     }
 
     // Search filter

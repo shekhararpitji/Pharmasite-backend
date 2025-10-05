@@ -7,18 +7,22 @@ const pipelineAsync = promisify(pipeline);
 const DATABASE_NAME = process.env.CLICKHOUSE_DB || 'pharma_analytics';
 
 // Field mappings for frontend vs database field names
-const fieldMappings = {
-  "Indian Port": "portOfOrigin",
-  "H S Code": "H_S_Code",
-  "Quantity Units": "quantityUnit",
-  "Unit Price": "standardUnitRateUSD",
-  "Currency": "currency",
-   "Product Name": "productName",
-  "Product Description": "productDescription",
-  "Indian Company": "supplier",
-  "Foreign Company": "buyer",
-  "Foreign Country": "buyerCountry",
- "CAS Number": "CAS_Number",
+// Now both import and export use the same field structure
+const getFieldMappings = (informationOf) => {
+  return {
+    "Indian Port": "portOfOrigin",
+    "H S Code": "H_S_Code",
+    "Quantity Units": "quantityUnit",
+    "Unit Price": "standardUnitRateUSD",
+    "Currency": "currency",
+    "Product Name": "productName",
+    "Product Description": "productDescription",
+    "Indian Company": "supplier",
+    "Foreign Company": "buyer",
+    "Foreign Country": "buyerCountry", // Now both use buyerCountry
+    "CAS Number": "CAS_Number",
+    "Date of Shipment": "shippingBillDate" // Now both use shippingBillDate
+  };
 };
 
 // Define which fields are numeric (Float64/Int64) to handle empty string conversion
@@ -32,33 +36,55 @@ const numericFields = {
 
 // Helper function to convert datetime string to date format
 const convertToDateString = (dateString) => {
-  if (!dateString) return null;
+  if (!dateString || dateString.trim() === '' || dateString === 'null' || dateString === 'undefined') {
+    return null;
+  }
+  
   // If it's already a date string (YYYY-MM-DD), return as is
   if (/^\d{4}-\d{2}-\d{2}$/.test(dateString)) {
     return dateString;
   }
+  
   // If it's a datetime string, extract the date part
   if (dateString.includes(' ')) {
-    return dateString.split(' ')[0];
+    const datePart = dateString.split(' ')[0];
+    // Validate the extracted date part
+    if (/^\d{4}-\d{2}-\d{2}$/.test(datePart)) {
+      return datePart;
+    }
   }
+  
   // If it's a Date object or other format, try to convert
   try {
-    return new Date(dateString).toISOString().split('T')[0];
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) {
+      console.warn('Invalid date format:', dateString);
+      return null;
+    }
+    return date.toISOString().split('T')[0];
   } catch (error) {
     console.warn('Invalid date format:', dateString);
     return null;
   }
 };
 
-// Helper function to build safe field conditions for numeric fields
+// Helper function to build safe field conditions for different field types
 const buildFieldCondition = (dbColumnName, searchCondition = '') => {
   const isNumeric = numericFields[dbColumnName];
+  
+  // Check if this is a Date field
+  const isDateField = dbColumnName === 'shippingBillDate';
   
   if (isNumeric) {
     // For numeric fields, use toString() to convert to string and handle NULL/empty values
     return `AND toString(${dbColumnName}) IS NOT NULL 
             AND toString(${dbColumnName}) != '' 
             AND toString(${dbColumnName}) != '0' 
+            ${searchCondition}`;
+  } else if (isDateField) {
+    // For Date fields, only check for NULL and invalid dates - no string operations
+    return `AND ${dbColumnName} IS NOT NULL 
+            AND ${dbColumnName} != '1970-01-01' 
             ${searchCondition}`;
   } else {
     // For string fields, use the original logic
@@ -76,13 +102,19 @@ const buildClickHouseWhereClause = (query, modifiedQuery) => {
   console.log('buildClickHouseWhereClause - modifiedQuery:', modifiedQuery);
 
   // Date range filter - prioritize modifiedQuery dates (from queryModifier)
+  // Both import and export now use the same date field
+  const dateField = 'shippingBillDate';
+  
   if (modifiedQuery.startDate && modifiedQuery.endDate) {
     console.log('Using modifiedQuery dates:', modifiedQuery.startDate, modifiedQuery.endDate);
     // Convert datetime strings to date format for ClickHouse
     const startDate = convertToDateString(modifiedQuery.startDate);
     const endDate = convertToDateString(modifiedQuery.endDate);
     if (startDate && endDate) {
-      whereConditions.push(`shippingBillDate BETWEEN '${startDate}' AND '${endDate}'`);
+      // Use toDate() function to ensure proper date type casting in ClickHouse
+      whereConditions.push(`toDate(${dateField}) BETWEEN toDate('${startDate}') AND toDate('${endDate}')`);
+      // Also filter out null dates and invalid dates - use proper date type filtering
+      whereConditions.push(`${dateField} IS NOT NULL AND ${dateField} != '1970-01-01'`);
     }
   } else if (query.startDate && query.endDate) {
     console.log('Using direct query dates:', query.startDate, query.endDate);
@@ -90,10 +122,15 @@ const buildClickHouseWhereClause = (query, modifiedQuery) => {
     const startDate = convertToDateString(query.startDate);
     const endDate = convertToDateString(query.endDate);
     if (startDate && endDate) {
-      whereConditions.push(`shippingBillDate BETWEEN '${startDate}' AND '${endDate}'`);
+      // Use toDate() function to ensure proper date type casting in ClickHouse
+      whereConditions.push(`toDate(${dateField}) BETWEEN toDate('${startDate}') AND toDate('${endDate}')`);
+      // Also filter out null dates and invalid dates - use proper date type filtering
+      whereConditions.push(`${dateField} IS NOT NULL AND ${dateField} != '1970-01-01'`);
     }
   } else {
     console.log('No date parameters found, skipping date filter');
+    // Still filter out empty/null dates even when no date range is specified - more comprehensive filtering
+    whereConditions.push(`${dateField} IS NOT NULL AND ${dateField} != '' AND ${dateField} != '1970-01-01' AND length(${dateField}) > 0 AND ${dateField} != 'null' AND ${dateField} != 'undefined'`);
   }
   // If no date parameters are provided, don't add any date filter (query all data)
 
@@ -110,12 +147,13 @@ const buildClickHouseWhereClause = (query, modifiedQuery) => {
 
   // Additional filters
   if (query.filters && typeof query.filters === 'object') {
+    const filterFieldMappings = getFieldMappings(query.informationOf);
     for (let [field, values] of Object.entries(query.filters)) {
       console.log('field', field);
       console.log('values', values);
       values = values.split(',');
       if (Array.isArray(values) && values.length > 0) {
-        const dbColumnName = fieldMappings[field] || field;
+        const dbColumnName = filterFieldMappings[field] || field;
         const escapedValues = values.map(value => {
           const escapedValue = value.replace(/'/g, "''"); // Escape single quotes
           return `'${escapedValue}'`;
@@ -246,8 +284,9 @@ exports.getFilterValues = async (req, res) => {
     const filterField = req.query.field || null; // Get values for specific field only
 
     // If specific field is requested, get only that field
-    if (filterField && fieldMappings[filterField]) {
-      const dbColumnName = fieldMappings[filterField];
+    const specificFieldMappings = getFieldMappings(query.informationOf);
+    if (filterField && specificFieldMappings[filterField]) {
+      const dbColumnName = specificFieldMappings[filterField];
       
       // Build where condition for search
       let searchCondition = '';
@@ -316,7 +355,8 @@ exports.getFilterValues = async (req, res) => {
     }
 
     // If no specific field requested, get all fields (with pagination for each)
-    const filterPromises = Object.entries(fieldMappings).map(async ([displayName, dbColumnName]) => {
+    const allFieldMappings = getFieldMappings(query.informationOf);
+    const filterPromises = Object.entries(allFieldMappings).map(async ([displayName, dbColumnName]) => {
       // Build where condition for search (if provided)
       let searchCondition = '';
       if (search) {
@@ -420,7 +460,8 @@ exports.getFilterMetadata = async (req, res) => {
     const { whereClause } = buildClickHouseWhereClause(query, modifiedQuery);
 
     // Get metadata for each field
-    const metadataPromises = Object.entries(fieldMappings).map(async ([displayName, dbColumnName]) => {
+    const metadataFieldMappings = getFieldMappings(modifiedQuery.informationOf);
+    const metadataPromises = Object.entries(metadataFieldMappings).map(async ([displayName, dbColumnName]) => {
       const fieldCondition = buildFieldCondition(dbColumnName);
       const countQuery = `
         SELECT count(DISTINCT ${dbColumnName}) as uniqueValueCount
@@ -480,7 +521,8 @@ exports.searchFilterValues = async (req, res) => {
     const results = {};
 
     // Search across all fields
-    const searchPromises = Object.entries(fieldMappings).map(async ([displayName, dbColumnName]) => {
+    const searchFieldMappings = getFieldMappings(query.informationOf);
+    const searchPromises = Object.entries(searchFieldMappings).map(async ([displayName, dbColumnName]) => {
       const escapedSearch = searchTerm.replace(/'/g, "''"); // Escape single quotes
       const isNumeric = numericFields[dbColumnName];
       const searchCondition = isNumeric 
@@ -543,15 +585,16 @@ exports.getFilterValuesByField = async (req, res) => {
     const { whereClause } = buildClickHouseWhereClause(query, modifiedQuery);
 
     // Validate field name
-    if (!fieldMappings[fieldName]) {
+    const validationFieldMappings = getFieldMappings(query.informationOf);
+    if (!validationFieldMappings[fieldName]) {
       return res.status(400).json({
         statusCode: 400,
         message: `Invalid field name: ${fieldName}`,
-        availableFields: Object.keys(fieldMappings)
+        availableFields: Object.keys(validationFieldMappings)
       });
     }
 
-    const dbColumnName = fieldMappings[fieldName];
+    const dbColumnName = validationFieldMappings[fieldName];
     const search = req.query.search || '';
     const sortOrder = req.query.sortOrder || 'ASC'; // ASC or DESC
 
@@ -640,14 +683,15 @@ exports.getAllTopMetrics = async (req, res) => {
     console.log('Debug - Where Clause:', whereClause);
     console.log('Debug - Table Name:', tableName);
 
-    // Define all metrics to fetch
+    // Define all metrics to fetch - both import and export now use buyerCountry
+    const countryField = 'buyerCountry';
     const metricsConfig = [
       // Quantity-based metrics
       { groupBy: 'buyer', aggregate: 'quantity', key: 'topBuyersByQuantity' },
       { groupBy: 'year', aggregate: 'quantity', key: 'topYearsByQuantity' },
       { groupBy: 'H_S_Code', aggregate: 'quantity', key: 'topHSCodeByQuantity' },
       { groupBy: 'supplier', aggregate: 'quantity', key: 'topSuppliersByQuantity' },
-      { groupBy: 'buyerCountry', aggregate: 'quantity', key: 'topCountryByQuantity' },
+      { groupBy: countryField, aggregate: 'quantity', key: 'topCountryByQuantity' },
       { groupBy: 'portOfOrigin', aggregate: 'quantity', key: 'topIndianPortByQuantity' },
       
       // Value-based metrics
@@ -655,7 +699,7 @@ exports.getAllTopMetrics = async (req, res) => {
       { groupBy: 'year', aggregate: 'totalValueInvoice', key: 'topYearsByValue' },
       { groupBy: 'H_S_Code', aggregate: 'totalValueInvoice', key: 'topHSCodeByValue' },
       { groupBy: 'supplier', aggregate: 'totalValueInvoice', key: 'topSuppliersByValue' },
-      { groupBy: 'buyerCountry', aggregate: 'totalValueInvoice', key: 'topCountryByValue' },
+      { groupBy: countryField, aggregate: 'totalValueInvoice', key: 'topCountryByValue' },
       { groupBy: 'portOfOrigin', aggregate: 'totalValueInvoice', key: 'topIndianPortByValue' }
     ];
 
@@ -774,12 +818,13 @@ exports.getDataFromClickHouse = async (req, res) => {
     const countData = await countResult.json();
     const totalCount = countData && countData.data ? countData.data[0].totalCount : 0;
 
-    // Get paginated data
+    // Get paginated data - both import and export now use shippingBillDate
+    const orderByField = 'shippingBillDate';
     const dataQuery = `
       SELECT *
       FROM ${DATABASE_NAME}.${tableName}
       ${whereClause}
-      ORDER BY shippingBillDate DESC
+      ORDER BY toDate(${orderByField}) DESC
       LIMIT ${limit} OFFSET ${offset}
     `;
 
@@ -887,7 +932,7 @@ exports.getDataFromClickHouse = async (req, res) => {
 
 //     // Define column headers with better formatting
 //     const columnMappings = {
-//       'shippingBillDate': 'Date of Shipment',
+//       'billOfEntryDate': 'Date of Entry',
 //       'portOfOrigin': 'Indian Port',
 //       'portOfDeparture': 'Port of Departure',
 //       'H_S_Code': 'HS Code',
@@ -1062,13 +1107,15 @@ exports.downloadDataAsCSV = async (req, res) => {
       });
     }
 
-    // Get all data (no pagination for download)
-    const selectClause = selectedColumns ? selectedColumns.join(', ') : 'shippingBillDate, portOfOrigin, portOfDeparture, H_S_Code, productDescription, productName, standardQuantity, quantityUnit, standardUnitRateUSD, currency, supplier, buyer, buyerCountry, supplierCountry, CAS_Number, totalValueInvoice, region, year';
+    // Get all data (no pagination for download) - both import and export now use same fields
+    const dateField = 'shippingBillDate';
+    const countryField = 'buyerCountry';
+    const selectClause = selectedColumns ? selectedColumns.join(', ') : `${dateField}, portOfOrigin, portOfDeparture, H_S_Code, productDescription, productName, standardQuantity, quantityUnit, standardUnitRateUSD, currency, supplier, buyer, ${countryField}, supplierCountry, CAS_Number, totalValueInvoice, region, year`;
     const dataQuery = `
       SELECT ${selectClause}
       FROM ${DATABASE_NAME}.${tableName}
       ${whereClause}
-      ORDER BY shippingBillDate DESC
+      ORDER BY toDate(${dateField}) DESC
     `;
 
     // Execute query and get all results
@@ -1089,7 +1136,7 @@ exports.downloadDataAsCSV = async (req, res) => {
 
     // Define column headers with better formatting
     const columnMappings = {
-      'shippingBillDate': 'Date of Shipment',
+      'billOfEntryDate': 'Date of Entry',
       'portOfOrigin': 'Indian Port',
       'portOfDeparture': 'Port of Departure',
       'H_S_Code': 'HS Code',
@@ -1223,7 +1270,7 @@ exports.downloadDataAsCSVStream = async (req, res) => {
 
     // Define column headers with better formatting
     const columnMappings = {
-      'shippingBillDate': 'Date of Shipment',
+      'billOfEntryDate': 'Date of Entry',
       'portOfOrigin': 'Indian Port',
       'portOfDeparture': 'Port of Departure',
       'H_S_Code': 'HS Code',
@@ -1264,13 +1311,14 @@ exports.downloadDataAsCSVStream = async (req, res) => {
         .trim();
     };
 
-    // Get all data using streaming with CSV format directly from ClickHouse
+    // Get all data using streaming with CSV format directly from ClickHouse - both use shippingBillDate
+    const orderByField = 'shippingBillDate';
     const selectClause = selectedColumns ? selectedColumns.join(', ') : '*';
     const dataQuery = `
       SELECT ${selectClause}
       FROM ${DATABASE_NAME}.${tableName}
       ${whereClause}
-      ORDER BY shippingBillDate DESC
+      ORDER BY toDate(${orderByField}) DESC
     `;
 
     let headersWritten = false;
@@ -1466,7 +1514,8 @@ exports.getClickHouseSuggestedData = async (req, res) => {
     const tableName = getTableName(informationOf);
     
     // Map frontend field names to database column names if needed
-    const dbSearchType = fieldMappings[searchType] || searchType;
+    const suggestionFieldMappings = getFieldMappings(informationOf);
+    const dbSearchType = suggestionFieldMappings[searchType] || searchType;
 
     // Handle field names with spaces by quoting them
     const quotedSearchType = dbSearchType.includes(' ') ? `"${dbSearchType}"` : dbSearchType;

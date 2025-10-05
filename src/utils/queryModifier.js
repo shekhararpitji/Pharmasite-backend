@@ -22,19 +22,69 @@ exports.queryModifier = (query) => {
     let startDate;
     let endDate;
 
-    // Process date range - defaults to last year if not provided
-    // if (!query.duration) {
-    //     // Default to last year to current date for better performance
-    //     endDate = dayjs().format('YYYY-MM-DD 23:59:59');
-    //     startDate = dayjs().subtract(1, 'year').format('YYYY-MM-DD 00:00:00');
-    // } else {
-    //     // Parse date range from frontend format (DD/MM/YYYY-DD/MM/YYYY)
-    //     const dateRange = query.duration.split('-')
-    //     
-    // }
+    // Process date range - handle both duration and separate startDate/endDate
+    if (query.duration) {
+        // Handle duration format: '11/06/2020-05/10/2025'
+        try {
+            const dateRange = query.duration.split('-');
+            if (dateRange.length === 2) {
+                // Parse DD/MM/YYYY format to YYYY-MM-DD format
+                const startDateStr = dateRange[0].trim();
+                const endDateStr = dateRange[1].trim();
+                
+                // Convert various date formats to YYYY-MM-DD
+                const parseDate = (dateStr) => {
+                    // Handle DD/MM/YYYY format
+                    const parts = dateStr.split('/');
+                    if (parts.length === 3) {
+                        const day = parts[0].padStart(2, '0');
+                        const month = parts[1].padStart(2, '0');
+                        const year = parts[2];
+                        return `${year}-${month}-${day}`;
+                    }
+                    
+                    // Handle MM/DD/YYYY format (if needed)
+                    if (dateStr.includes('/') && parts.length === 3) {
+                        const month = parts[0].padStart(2, '0');
+                        const day = parts[1].padStart(2, '0');
+                        const year = parts[2];
+                        return `${year}-${month}-${day}`;
+                    }
+                    
+                    // Handle YYYY-MM-DD format (already correct)
+                    if (dateStr.includes('-') && dateStr.length === 10) {
+                        return dateStr;
+                    }
+                    
+                    return null;
+                };
+                
+                startDate = parseDate(startDateStr);
+                endDate = parseDate(endDateStr);
+                
+                // Validate parsed dates
+                if (!startDate || !endDate) {
+                    console.warn('Invalid date format in duration:', query.duration);
+                    // Fallback to default dates - return date strings only
+                    endDate = dayjs().format('YYYY-MM-DD');
+                    startDate = dayjs().subtract(1, 'year').format('YYYY-MM-DD');
+                }
+            }
+        } catch (error) {
+            console.warn('Error parsing duration:', query.duration, error);
+        }
+    } else if (query.startDate && query.endDate) {
+        // Handle separate startDate and endDate fields
+        startDate = query.startDate;
+        endDate = query.endDate;
+    } else {
+        // Default to last year if no date range provided - return date strings only
+        endDate = dayjs().format('YYYY-MM-DD');
+        startDate = dayjs().subtract(1, 'year').format('YYYY-MM-DD');
+    }
 
-    searchQuery.startDate = query.startDate ;
-    searchQuery.endDate = query.endDate;
+    searchQuery.startDate = startDate;
+    searchQuery.endDate = endDate;
 
     // Process search type - normalize field names for database compatibility
     let searchType;

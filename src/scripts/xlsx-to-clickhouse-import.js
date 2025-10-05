@@ -4,7 +4,7 @@ const path = require('path');
 const { program } = require('commander');
 const XLSX = require('xlsx');
 const { clickhouse, initClickHouse } = require('../config/clickhouse');
-const { initClickHouseExport } = require('../models/clickhouse/export.model');
+const { initClickHouseImport } = require('../models/clickhouse/import.model');
 const dotenv = require('dotenv');
 const { Transform } = require('stream');
 const { Readable } = require('stream');
@@ -14,12 +14,12 @@ dotenv.config();
 
 // Configuration
 const DATABASE_NAME = process.env.CLICKHOUSE_DB || 'pharma_analytics';
-const TABLE_NAME = 'export_data';
+const TABLE_NAME = 'import_data';
 
 // Configure command line options
 program
   .version('1.0.0')
-  .description('Import XLSX data into ClickHouse')
+  .description('Import XLSX data into ClickHouse Import Table')
   .option('-f, --file <path>', 'Path to input XLSX file')
   .option('-s, --sheet <name>', 'Sheet name to import (defaults to first sheet)')
   .option('-b, --batch-size <number>', 'Number of rows per batch', 50000)
@@ -37,13 +37,16 @@ function cleanData(record) {
   cleanedRecord.id = uuidv4();
 
   // Clean text fields - remove tabs, newlines, and excessive whitespace
+  // Keep original import field names for processing, will map to export structure later
   const textFields = [
-    'informationOf', 'yearMonth', 'portOfOrigin', 'modeOfShipment',
-    'indianPortCode', 'shippingBillNumber', 'shippingBillStatus', 'invoiceNumber',
-    'itemNumber', 'H_S_Code', 'productDescription', 'productName', 'CAS_Number',
-    'quantityUnit', 'standardQuantityUnit', 'currency', 'importExportCode',
-    'supplier', 'supplierRaw', 'supplierAddress', 'supplierCity', 'supplierCountry',
-    'buyer', 'buyerRaw', 'companyStatus', 'portOfDeparture', 'buyerCountry', 'region'
+    'informationOf', 'yearMonth', 'portOfDeparture', 'modeOfShipment',
+    'indianPortCode', 'billOfEntry', 'billOfEntryStatus', 'billOfEntryType', 
+    'invoiceNumber', 'itemNumber', 'H_S_Code', 'productDescription', 
+    'productName', 'CAS_Number', 'CID', 'quantityUnit', 'standardQuantityUnit', 
+    'currency', 'importExportCode', 'buyer', 'buyerStandardized', 'buyerAddress', 
+    'buyerCity', 'buyerPin', 'buyerState', 'buyerPhone', 'buyerEmail', 'director',
+    'supplier', 'supplierStandardized', 'supplierAddress', 'customHouseAgent', 
+    'portOfOrigin', 'supplierCountry', 'region'
   ];
 
   textFields.forEach(field => {
@@ -62,7 +65,7 @@ function cleanData(record) {
   const numericFields = [
     'quantity', 'standardQuantity', 'standardUnitRateINR', 'standardUnitRateUSD',
     'itemRateINR', 'itemRateUSD', 'totalValueINR', 'totalValueUSD',
-    'itemRateInvoice', 'totalValueInvoice', 'freightOnBoardINR', 'freightOnBoardUSD'
+    'itemRateInvoice', 'totalValueInvoice', 'totalDutyPaidINR', 'totalDutyPaidUSD'
   ];
 
   numericFields.forEach(field => {
@@ -97,6 +100,7 @@ function cleanData(record) {
   } else {
     cleanedRecord.year = 0;
   }
+
   const convertDateFormat = (dateString) => {
     if (!dateString || dateString === '' || dateString === 'null' || dateString === 'undefined') {
       throw new Error('Date string is empty or null');
@@ -171,26 +175,20 @@ function cleanData(record) {
         return `${yyyy}-${mm}-${dd}`;
       }
   
-      throw new Error('Date string error');
+      throw new Error('Date string error'); 
     } catch (error) {
       console.error('Error converting date:', dateString, error);
       throw new Error('Date string error');
     }
   };
   
-  // Clean dates
-  if ('shippingBillDate' in record && record.shippingBillDate && record.shippingBillDate.toString().trim() !== '') {
+  // Clean dates - map from billOfEntryDate to shippingBillDate for export-aligned structure
+  if ('billOfEntryDate' in record && record.billOfEntryDate && record.billOfEntryDate.toString().trim() !== '') {
     try {
-      let dateValue = convertDateFormat(record.shippingBillDate);
-      // if (dateValue instanceof Date) {
-      //   dateValue = dateValue.toISOString().split('T')[0];
-      // } else {
-      //   dateValue = dateValue?.toString().trim() || '';
-      //   dateValue = dateValue.split(' ')[0].trim();
-      // }
+      let dateValue = convertDateFormat(record.billOfEntryDate);
       cleanedRecord.shippingBillDate = /^\d{4}-\d{2}-\d{2}$/.test(dateValue) ? dateValue : '1970-01-01';
     } catch (error) {
-      console.warn('Error converting shippingBillDate:', record.shippingBillDate, error.message);
+      console.warn('Error converting billOfEntryDate to shippingBillDate:', record.billOfEntryDate, error.message);
       cleanedRecord.shippingBillDate = '1970-01-01';
     }
   } else {
@@ -252,37 +250,65 @@ async function importXLSX(filePath, sheetName = null, batchSize = 50000) {
     }
     
     // Create tables and views
-    await initClickHouseExport();
+    console.log('Creating ClickHouse import table...');
+    const tableCreated = await initClickHouseImport();
+    if (!tableCreated) {
+      console.error('Failed to create ClickHouse import table');
+      return false;
+    }
+    console.log('ClickHouse import table created successfully');
     
     // Read XLSX file
+    console.log('Reading XLSX file... (This may take a while for large files)');
+    const startTime = Date.now();
     const workbook = XLSX.readFile(filePath);
+    console.log(`XLSX file read in ${(Date.now() - startTime) / 1000}s`);
+    
     const sheet = sheetName ? workbook.Sheets[sheetName] : workbook.Sheets[workbook.SheetNames[0]];
     if (!sheet) {
       throw new Error(`Sheet ${sheetName || workbook.SheetNames[0]} not found`);
     }
 
     // Convert to JSON with headers
+    console.log('Converting XLSX to JSON... (This may take a while for large files)');
+    const convertStartTime = Date.now();
     const jsonData = XLSX.utils.sheet_to_json(sheet, { raw: false, dateNF: 'YYYY-MM-DD' });
+    console.log(`JSON conversion completed in ${(Date.now() - convertStartTime) / 1000}s`);
     
     console.log(`Found ${jsonData.length} rows to import`);
     
-    // Log the first few records to help with debugging
-    if (jsonData.length > 0) {
+    if (jsonData.length === 0) {
+      console.log('No data found in the file');
+      return true;
     }
     
     return new Promise((resolve, reject) => {
+      console.log('Setting up data processing streams...');
       // Create data stream
       const dataStream = xlsxToStream([...jsonData]);
       
       // Create transform stream for data cleaning
+      let processedCount = 0;
       const transformer = new Transform({
         objectMode: true,
         transform(record, encoding, callback) {
           try {
+            processedCount++;
+            if (processedCount % 1000 === 0) {
+              console.log(`Processed ${processedCount} records...`);
+            }
             const cleanedRecord = cleanData(record);
             
-            // Ensure all required fields are present in the correct order
+            // Skip records with invalid dates
+            if (cleanedRecord.shippingBillDate === '1970-01-01') {
+              console.warn('Skipping record with invalid date:', record.shippingBillDate);
+              callback(null); // Skip this record
+              return;
+            }
+            
+            // Field mapping from original import structure to export-aligned database structure
             const orderedRecord = {
+              // Core fields - direct mapping
               id: cleanedRecord.id,
               informationOf: cleanedRecord.informationOf,
               yearMonth: cleanedRecord.yearMonth,
@@ -290,9 +316,15 @@ async function importXLSX(filePath, sheetName = null, batchSize = 50000) {
               portOfOrigin: cleanedRecord.portOfOrigin,
               modeOfShipment: cleanedRecord.modeOfShipment,
               indianPortCode: cleanedRecord.indianPortCode,
+              
+              // Date field mapping: billOfEntryDate -> shippingBillDate
               shippingBillDate: cleanedRecord.shippingBillDate,
-              shippingBillNumber: cleanedRecord.shippingBillNumber,
-              shippingBillStatus: cleanedRecord.shippingBillStatus,
+              
+              // Shipping fields mapping: billOfEntry -> shippingBillNumber, billOfEntryStatus -> shippingBillStatus
+              shippingBillNumber: cleanedRecord.billOfEntry || '',
+              shippingBillStatus: cleanedRecord.billOfEntryStatus || '',
+              
+              // Common fields - direct mapping
               invoiceNumber: cleanedRecord.invoiceNumber,
               itemNumber: cleanedRecord.itemNumber,
               H_S_Code: cleanedRecord.H_S_Code,
@@ -312,19 +344,29 @@ async function importXLSX(filePath, sheetName = null, batchSize = 50000) {
               itemRateInvoice: cleanedRecord.itemRateInvoice,
               currency: cleanedRecord.currency,
               totalValueInvoice: cleanedRecord.totalValueInvoice,
-              freightOnBoardINR: cleanedRecord.freightOnBoardINR,
-              freightOnBoardUSD: cleanedRecord.freightOnBoardUSD,
+              
+              // Freight fields - set to 0 for import data (not applicable)
+              freightOnBoardINR: 0,
+              freightOnBoardUSD: 0,
+              
               importExportCode: cleanedRecord.importExportCode,
+              
+              // Supplier fields mapping
               supplier: cleanedRecord.supplier,
-              supplierRaw: cleanedRecord.supplierRaw,
-              supplierAddress: cleanedRecord.supplierAddress,
-              supplierCity: cleanedRecord.supplierCity,
+              supplierRaw: cleanedRecord.supplierStandardized || cleanedRecord.supplier,
+              supplierAddress: cleanedRecord.supplierAddress || '',
+              supplierCity: cleanedRecord.supplierCity || '',
               supplierCountry: cleanedRecord.supplierCountry,
+              
+              // Buyer fields mapping
               buyer: cleanedRecord.buyer,
-              buyerRaw: cleanedRecord.buyerRaw,
-              companyStatus: cleanedRecord.companyStatus,
+              buyerRaw: cleanedRecord.buyerStandardized || cleanedRecord.buyer,
+              companyStatus: cleanedRecord.companyStatus || '',
               portOfDeparture: cleanedRecord.portOfDeparture,
-              buyerCountry: cleanedRecord.buyerCountry,
+              
+              // Country field mapping: supplierCountry -> buyerCountry for import data
+              buyerCountry: cleanedRecord.supplierCountry,
+              
               region: cleanedRecord.region,
               createdAt: cleanedRecord.createdAt,
               updatedAt: cleanedRecord.updatedAt
@@ -365,6 +407,7 @@ async function importXLSX(filePath, sheetName = null, batchSize = 50000) {
         .pipe(finalTransform);
 
       // Import data
+      console.log('Starting data import to ClickHouse...');
       clickhouse.insert({
         table: `${DATABASE_NAME}.${TABLE_NAME}`,
         values: finalTransform,
@@ -375,7 +418,10 @@ async function importXLSX(filePath, sheetName = null, batchSize = 50000) {
         console.log('Data import completed successfully');
         resolve(true);
       })
-      .catch(reject);
+      .catch((error) => {
+        console.error('ClickHouse insert error:', error);
+        reject(error);
+      });
     });
   } catch (error) {
     console.error('Error importing data:', error);
@@ -386,12 +432,11 @@ async function importXLSX(filePath, sheetName = null, batchSize = 50000) {
 /**
  * Main function
  */
-/**
- * Main function
- */
 async function main() {
+  console.log('Starting import script...');
   try {
     const { file, sheet, batchSize } = options;
+    console.log('Options:', { file, sheet, batchSize });
 
     if (file) {
       // Single file mode
@@ -406,21 +451,21 @@ async function main() {
         process.exit(1);
       }
     } else {
-      // Multi-file mode (1.xlsx → 40.xlsx)
-      const folder = path.join(__dirname, "../../data/export2");
-      for (let i = 1; i <= 20; i++) {
-        const filePath = path.join(folder, `${i}.xlsx`);
+      // Multi-file mode (1.xlsx → 20.xlsx) - looking in data/import folder
+      const folder = path.join(__dirname, "../../data/import");
+      for (let i = 101; i <= 102; i++) {
+        const filePath = path.join(folder, `Imp-Set${i}.xlsx`);
         if (!fs.existsSync(filePath)) {
           console.warn(`⚠️ File not found: ${filePath}, skipping...`);
           continue;
         }
 
-        console.log(`\n📂 Starting import for file ${i}.xlsx`);
+        console.log(`\n📂 Starting import for file Imp-Set${i}.xlsx`);
         const success = await importXLSX(filePath, sheet, batchSize);
         if (!success) {
-          console.error(`❌ Import failed for file ${i}.xlsx`);
+          console.error(`❌ Import failed for file Imp-Set${i}.xlsx`);
         } else {
-          console.log(`✅ Finished import for file ${i}.xlsx`);
+          console.log(`✅ Finished import for file Imp-Set${i}.xlsx`);
         }
       }
     }
@@ -432,6 +477,5 @@ async function main() {
   }
 }
 
-
 // Run the script
-main(); 
+main();

@@ -19,7 +19,6 @@ async function initClickHouseImport() {
           shippingBillDate Date,
           shippingBillNumber String,
           shippingBillStatus String,
-          shippingEntryType String,
           invoiceNumber String,
           itemNumber String,
           H_S_Code String,
@@ -39,25 +38,17 @@ async function initClickHouseImport() {
           itemRateInvoice Float64,
           currency String,
           totalValueInvoice Float64,
-          totalDutyPaidINR Float64,
-          totalDutyPaidUSD Float64,
+          freightOnBoardINR Float64,
+          freightOnBoardUSD Float64,
           importExportCode String,
           supplier String,
-          supplierStandardized String,
+          supplierRaw String,
           supplierAddress String,
           supplierCity String,
           supplierCountry String,
           buyer String,
-          buyerStandardized String,
-          buyerAddress String,
-          buyerCity String,
-          buyerPin String,
-          buyerState String,
-          buyerStatus String,
-          buyerPhone String,
-          buyerEmail String,
-          director String,
-          customHouseAgent String,
+          buyerRaw String,
+          companyStatus String,
           portOfDeparture String,
           buyerCountry String,
           region String,
@@ -70,7 +61,7 @@ async function initClickHouseImport() {
         SETTINGS index_granularity = 8192
       `
     });    
-
+    console.log('import_data table created successfully');
     return true;
   } catch (error) {
     console.error('Error initializing ClickHouse import tables:', error);
