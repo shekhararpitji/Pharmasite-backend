@@ -151,14 +151,40 @@ const buildClickHouseWhereClause = (query, modifiedQuery) => {
     for (let [field, values] of Object.entries(query.filters)) {
       console.log('field', field);
       console.log('values', values);
-      values = values.split(',');
-      if (Array.isArray(values) && values.length > 0) {
-        const dbColumnName = filterFieldMappings[field] || field;
-        const escapedValues = values.map(value => {
-          const escapedValue = value.replace(/'/g, "''"); // Escape single quotes
-          return `'${escapedValue}'`;
-        });
-        whereConditions.push(`${dbColumnName} IN (${escapedValues.join(', ')})`);
+      
+      const dbColumnName = filterFieldMappings[field] || field;
+      
+      // Handle range filters for quantityUnit and standardUnitRateUSD
+      // Expected format: { "Quantity Units": { min: 10, max: 100 } } or { "Unit Price": { min: 5.5, max: 25.0 } }
+      if ((field === 'Quantity Units' || field === 'Unit Price') && 
+          typeof values === 'object' && values.min !== undefined && values.max !== undefined) {
+        
+        console.log('Processing range filter for:', field, 'min:', values.min, 'max:', values.max);
+        
+        // Validate and convert min/max values to numbers
+        const minValue = parseFloat(values.min);
+        const maxValue = parseFloat(values.max);
+        
+        if (!isNaN(minValue) && !isNaN(maxValue)) {
+          // Ensure min is not greater than max
+          if (minValue <= maxValue) {
+            whereConditions.push(`${dbColumnName} >= ${minValue} AND ${dbColumnName} <= ${maxValue}`);
+          } else {
+            console.warn(`Invalid range: min (${minValue}) is greater than max (${maxValue}) for field ${field}`);
+          }
+        } else {
+          console.warn(`Invalid numeric values for range filter on field ${field}: min=${values.min}, max=${values.max}`);
+        }
+      } else {
+        // Handle regular comma-separated values (existing logic)
+        values = values.split(',');
+        if (Array.isArray(values) && values.length > 0) {
+          const escapedValues = values.map(value => {
+            const escapedValue = value.replace(/'/g, "''"); // Escape single quotes
+            return `'${escapedValue}'`;
+          });
+          whereConditions.push(`${dbColumnName} IN (${escapedValues.join(', ')})`);
+        }
       }
     }
   }
