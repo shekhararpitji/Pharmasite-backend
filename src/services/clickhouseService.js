@@ -356,11 +356,33 @@ const getDataFromClickHouse = async (req, res) => {
     // Apply additional filters
     if (query.filters && typeof query.filters === 'object') {
       for (const [displayName, values] of Object.entries(query.filters)) {
-        if (Array.isArray(values) && values.length > 0) {
-          const dbColumnName = fieldMappings[displayName] || displayName;
+        const dbColumnName = fieldMappings[displayName] || displayName;
+        
+        // Handle range filters for Quantity, Quantity Units and Unit Price
+        // Expected format: { "Quantity": { min: 10, max: 100 } } or { "Quantity Units": { min: 10, max: 100 } } or { "Unit Price": { min: 5.5, max: 25.0 } }
+        if ((displayName === 'Quantity' || displayName === 'Quantity Units' || displayName === 'Unit Price') && 
+            typeof values === 'object' && values.min !== undefined && values.max !== undefined) {
           
+          console.log('Processing range filter for:', displayName, 'min:', values.min, 'max:', values.max);
+          
+          // Validate and convert min/max values to numbers
+          const minValue = parseFloat(values.min);
+          const maxValue = parseFloat(values.max);
+          
+          if (!isNaN(minValue) && !isNaN(maxValue)) {
+            // Ensure min is not greater than max
+            if (minValue <= maxValue) {
+              whereConditions.push(`${dbColumnName} >= ${minValue} AND ${dbColumnName} <= ${maxValue}`);
+            } else {
+              console.warn(`Invalid range: min (${minValue}) is greater than max (${maxValue}) for field ${displayName}`);
+            }
+          } else {
+            console.warn(`Invalid numeric values for range filter on field ${displayName}: min=${values.min}, max=${values.max}`);
+          }
+        } else if (Array.isArray(values) && values.length > 0) {
+          // Handle regular comma-separated values (existing logic)
           // Handle numeric fields differently
-          const isNumericField = dbColumnName === 'quantity' || dbColumnName === 'totalValueInvoice' || dbColumnName === 'standardUnitRateUSD';
+          const isNumericField = dbColumnName === 'quantity' || dbColumnName === 'standardQuantity' || dbColumnName === 'totalValueInvoice' || dbColumnName === 'standardUnitRateUSD';
           
           if (isNumericField) {
             // For numeric fields, filter out empty strings and convert to numbers

@@ -12,6 +12,7 @@ const getFieldMappings = (informationOf) => {
   return {
     "Indian Port": "portOfOrigin",
     "H S Code": "H_S_Code",
+    "Quantity": "standardQuantity",
     "Quantity Units": "quantityUnit",
     "Unit Price": "standardUnitRateUSD",
     "Currency": "currency",
@@ -29,9 +30,9 @@ const getFieldMappings = (informationOf) => {
 const numericFields = {
   "standardUnitRateUSD": true,
   "quantity": true,
+  "standardQuantity": true,
   "totalValueInvoice": true,
-  "totalValueUSD": true,
-  "standardQuantity": true
+  "totalValueUSD": true
 };
 
 // Helper function to convert datetime string to date format
@@ -154,9 +155,9 @@ const buildClickHouseWhereClause = (query, modifiedQuery) => {
       
       const dbColumnName = filterFieldMappings[field] || field;
       
-      // Handle range filters for quantityUnit and standardUnitRateUSD
-      // Expected format: { "Quantity Units": { min: 10, max: 100 } } or { "Unit Price": { min: 5.5, max: 25.0 } }
-      if ((field === 'Quantity Units' || field === 'Unit Price') && 
+      // Handle range filters for quantity, quantityUnit and standardUnitRateUSD
+      // Expected format: { "Quantity": { min: 10, max: 100 } } or { "Quantity Units": { min: 10, max: 100 } } or { "Unit Price": { min: 5.5, max: 25.0 } }
+      if ((field === 'Quantity' || field === 'Quantity Units' || field === 'Unit Price') && 
           typeof values === 'object' && values.min !== undefined && values.max !== undefined) {
         
         console.log('Processing range filter for:', field, 'min:', values.min, 'max:', values.max);
