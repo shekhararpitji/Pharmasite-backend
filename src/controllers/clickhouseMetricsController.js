@@ -7,23 +7,42 @@ const pipelineAsync = promisify(pipeline);
 const DATABASE_NAME = process.env.CLICKHOUSE_DB || 'pharma_analytics';
 
 // Field mappings for frontend vs database field names
-// Now both import and export use the same field structure
+// Different mappings for import vs export
 const getFieldMappings = (informationOf) => {
-  return {
-    "Indian Port": "portOfOrigin",
-    "H S Code": "H_S_Code",
-    "Quantity": "standardQuantity",
-    "Quantity Units": "quantityUnit",
-    "Unit Price": "standardUnitRateUSD",
-    "Currency": "currency",
-    "Product Name": "productName",
-    "Product Description": "productDescription",
-    "Indian Company": "supplier",
-    "Foreign Company": "buyer",
-    "Foreign Country": "buyerCountry", // Now both use buyerCountry
-    "CAS Number": "CAS_Number",
-    "Date of Shipment": "shippingBillDate" // Now both use shippingBillDate
-  };
+  if (informationOf === 'import') {
+    return {
+      "Indian Port": "portOfDeparture",
+      "H S Code": "H_S_Code",
+      "Quantity": "standardQuantity",
+      "Quantity Units": "quantityUnit",
+      "Unit Price": "standardUnitRateUSD",
+      "Currency": "currency",
+      "Product Name": "productName",
+      "Product Description": "productDescription",
+      "Indian Company": "buyer",
+      "Foreign Company": "supplier",
+      "Foreign Country": "supplierCountry",
+      "CAS Number": "CAS_Number",
+      "Date of Shipment": "shippingBillDate"
+    };
+  } else {
+    // For export
+    return {
+      "Indian Port": "portOfOrigin",
+      "H S Code": "H_S_Code",
+      "Quantity": "standardQuantity",
+      "Quantity Units": "quantityUnit",
+      "Unit Price": "standardUnitRateUSD",
+      "Currency": "currency",
+      "Product Name": "productName",
+      "Product Description": "productDescription",
+      "Indian Company": "supplier",
+      "Foreign Company": "buyer",
+      "Foreign Country": "buyerCountry",
+      "CAS Number": "CAS_Number",
+      "Date of Shipment": "shippingBillDate"
+    };
+  }
 };
 
 // Define which fields are numeric (Float64/Int64) to handle empty string conversion
@@ -292,21 +311,14 @@ exports.getSummaryStats = async (req, res) => {
   }
 };
 
-// Enhanced Get filter values with pagination and search
+// Enhanced Get filter values with search
 exports.getFilterValues = async (req, res) => {
   try {
     const query = req.query;
-    // return res.status(200).json({
-    //   statusCode: 200
-    // });
     const modifiedQuery = queryModifier(query);
     const tableName = getTableName(modifiedQuery.informationOf);
     const { whereClause } = buildClickHouseWhereClause(query, modifiedQuery);
 
-    // Pagination parameters
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 100;
-    const offset = (page - 1) * limit;
     const search = req.query.search || ''; // Search within filter values
     const filterField = req.query.field || null; // Get values for specific field only
 
@@ -315,158 +327,214 @@ exports.getFilterValues = async (req, res) => {
     if (filterField && specificFieldMappings[filterField]) {
       const dbColumnName = specificFieldMappings[filterField];
       
-      // Build where condition for search
-      let searchCondition = '';
-      if (search) {
-        const escapedSearch = search.replace(/'/g, "''"); // Escape single quotes
-        const isNumeric = numericFields[dbColumnName];
-        if (isNumeric) {
-          searchCondition = `AND toString(${dbColumnName}) ILIKE '%${escapedSearch}%'`;
-        } else {
-          searchCondition = `AND ${dbColumnName} ILIKE '%${escapedSearch}%'`;
+      // Check if this is a range field (standardQuantity or standardUnitRateUSD)
+      const isRangeField = dbColumnName === 'standardQuantity' || dbColumnName === 'standardUnitRateUSD';
+      
+      if (isRangeField) {
+        // For range fields, return min and max values
+        const fieldCondition = buildFieldCondition(dbColumnName, '');
+        const rangeQuery = `
+          SELECT 
+            MIN(${dbColumnName}) as min,
+            MAX(${dbColumnName}) as max
+          FROM ${DATABASE_NAME}.${tableName}
+          ${whereClause}
+          ${fieldCondition}
+        `;
+
+        const rangeResult = await clickhouse.query({
+          query: rangeQuery
+        });
+
+        const rangeData = await rangeResult.json();
+        const rangeValues = rangeData && rangeData.data ? rangeData.data[0] : { min: 0, max: 0 };
+
+        const filters = {};
+        filters[filterField] = {
+          min: parseFloat(rangeValues.min) || 0,
+          max: parseFloat(rangeValues.max) || 0
+        };
+
+        return res.status(200).json({
+          statusCode: 200,
+          filters,
+          query,
+          field: filterField,
+          type: 'range'
+        });
+      } else {
+        // For regular fields, return distinct values
+        // Build where condition for search
+        let searchCondition = '';
+        if (search) {
+          const escapedSearch = search.replace(/'/g, "''"); // Escape single quotes
+          const isNumeric = numericFields[dbColumnName];
+          if (isNumeric) {
+            searchCondition = `AND toString(${dbColumnName}) ILIKE '%${escapedSearch}%'`;
+          } else {
+            searchCondition = `AND ${dbColumnName} ILIKE '%${escapedSearch}%'`;
+          }
         }
+
+        // Get total count
+        const fieldCondition = buildFieldCondition(dbColumnName, searchCondition);
+        const countQuery = `
+          SELECT count(DISTINCT ${dbColumnName}) as totalCount
+          FROM ${DATABASE_NAME}.${tableName}
+          ${whereClause}
+          ${fieldCondition}
+        `;
+
+        const countResult = await clickhouse.query({
+          query: countQuery
+        });
+
+        const countData = await countResult.json();
+        const totalCount = countData && countData.data ? countData.data[0].totalCount : 0;
+
+        // Get all distinct values
+        const distinctQuery = `
+          SELECT DISTINCT ${dbColumnName} as value
+          FROM ${DATABASE_NAME}.${tableName}
+          ${whereClause}
+          ${fieldCondition}
+          ORDER BY ${dbColumnName}
+        `;
+
+        const distinctResult = await clickhouse.query({
+          query: distinctQuery
+        });
+
+        const distinctData = await distinctResult.json();
+        const rows = distinctData && distinctData.data ? distinctData.data : distinctData;
+        const values = rows.map(item => item.value).filter(Boolean);
+
+        const filters = {};
+        filters[filterField] = values;
+
+        return res.status(200).json({
+          statusCode: 200,
+          filters,
+          totalCount,
+          query,
+          search: search || null,
+          field: filterField,
+          type: 'list'
+        });
       }
-
-      // Get total count first
-      const fieldCondition = buildFieldCondition(dbColumnName, searchCondition);
-      const countQuery = `
-        SELECT count(DISTINCT ${dbColumnName}) as totalCount
-        FROM ${DATABASE_NAME}.${tableName}
-        ${whereClause}
-        ${fieldCondition}
-      `;
-
-      const countResult = await clickhouse.query({
-        query: countQuery
-      });
-
-      const countData = await countResult.json();
-      const totalCount = countData && countData.data ? countData.data[0].totalCount : 0;
-
-      // Get paginated distinct values
-      const distinctQuery = `
-        SELECT DISTINCT ${dbColumnName} as value
-        FROM ${DATABASE_NAME}.${tableName}
-        ${whereClause}
-        ${fieldCondition}
-        ORDER BY ${dbColumnName}
-        LIMIT ${limit} OFFSET ${offset}
-      `;
-
-      const distinctResult = await clickhouse.query({
-        query: distinctQuery
-      });
-
-      const distinctData = await distinctResult.json();
-      const rows = distinctData && distinctData.data ? distinctData.data : distinctData;
-      const values = rows.map(item => item.value).filter(Boolean);
-
-      const filters = {};
-      filters[filterField] = values;
-
-      return res.status(200).json({
-        statusCode: 200,
-        filters,
-        pagination: {
-          currentPage: page,
-          totalPages: Math.ceil(totalCount / limit),
-          totalItems: totalCount,
-          itemsPerPage: limit,
-          hasNextPage: page < Math.ceil(totalCount / limit),
-          hasPrevPage: page > 1
-        },
-        query,
-        search: search || null,
-        field: filterField
-      });
     }
 
-    // If no specific field requested, get all fields (with pagination for each)
+    // If no specific field requested, get all fields
     const allFieldMappings = getFieldMappings(query.informationOf);
     const filterPromises = Object.entries(allFieldMappings).map(async ([displayName, dbColumnName]) => {
-      // Build where condition for search (if provided)
-      let searchCondition = '';
-      if (search) {
-        const escapedSearch = search.replace(/'/g, "''"); // Escape single quotes
-        const isNumeric = numericFields[dbColumnName];
-        if (isNumeric) {
-          searchCondition = `AND toString(${dbColumnName}) ILIKE '%${escapedSearch}%'`;
-        } else {
-          searchCondition = `AND ${dbColumnName} ILIKE '%${escapedSearch}%'`;
+      // Check if this is a range field (standardQuantity or standardUnitRateUSD)
+      const isRangeField = dbColumnName === 'standardQuantity' || dbColumnName === 'standardUnitRateUSD';
+      
+      if (isRangeField) {
+        // For range fields, return min and max values
+        const fieldCondition = buildFieldCondition(dbColumnName, '');
+        const rangeQuery = `
+          SELECT 
+            MIN(${dbColumnName}) as min,
+            MAX(${dbColumnName}) as max
+          FROM ${DATABASE_NAME}.${tableName}
+          ${whereClause}
+          ${fieldCondition}
+        `;
+
+        const rangeResult = await clickhouse.query({
+          query: rangeQuery
+        });
+
+        const rangeData = await rangeResult.json();
+        const rangeValues = rangeData && rangeData.data ? rangeData.data[0] : { min: 0, max: 0 };
+
+        return {
+          displayName,
+          values: {
+            min: parseFloat(rangeValues.min) || 0,
+            max: parseFloat(rangeValues.max) || 0
+          },
+          type: 'range'
+        };
+      } else {
+        // For regular fields, return distinct values
+        // Build where condition for search (if provided)
+        let searchCondition = '';
+        if (search) {
+          const escapedSearch = search.replace(/'/g, "''"); // Escape single quotes
+          const isNumeric = numericFields[dbColumnName];
+          if (isNumeric) {
+            searchCondition = `AND toString(${dbColumnName}) ILIKE '%${escapedSearch}%'`;
+          } else {
+            searchCondition = `AND ${dbColumnName} ILIKE '%${escapedSearch}%'`;
+          }
         }
+
+        // Get total count for this field
+        const fieldCondition = buildFieldCondition(dbColumnName, searchCondition);
+        const countQuery = `
+          SELECT count(DISTINCT ${dbColumnName}) as totalCount
+          FROM ${DATABASE_NAME}.${tableName}
+          ${whereClause}
+          ${fieldCondition}
+        `;
+
+        const countResult = await clickhouse.query({
+          query: countQuery
+        });
+
+        const countData = await countResult.json();
+        const totalCount = countData && countData.data ? countData.data[0].totalCount : 0;
+
+        // Get all distinct values for this field
+        const distinctQuery = `
+          SELECT DISTINCT ${dbColumnName} as value
+          FROM ${DATABASE_NAME}.${tableName}
+          ${whereClause}
+          ${fieldCondition}
+          ORDER BY ${dbColumnName}
+        `;
+
+        const distinctResult = await clickhouse.query({
+          query: distinctQuery
+        });
+
+        const distinctData = await distinctResult.json();
+        const rows = distinctData && distinctData.data ? distinctData.data : distinctData;
+        const values = rows.map(item => item.value).filter(Boolean);
+
+        return {
+          displayName,
+          values,
+          totalCount,
+          type: 'list'
+        };
       }
-
-      // Get total count for this field
-      const fieldCondition = buildFieldCondition(dbColumnName, searchCondition);
-      const countQuery = `
-        SELECT count(DISTINCT ${dbColumnName}) as totalCount
-        FROM ${DATABASE_NAME}.${tableName}
-        ${whereClause}
-        ${fieldCondition}
-      `;
-
-      const countResult = await clickhouse.query({
-        query: countQuery
-      });
-
-      const countData = await countResult.json();
-      const totalCount = countData && countData.data ? countData.data[0].totalCount : 0;
-
-      // Get paginated distinct values for this field
-      const distinctQuery = `
-        SELECT DISTINCT ${dbColumnName} as value
-        FROM ${DATABASE_NAME}.${tableName}
-        ${whereClause}
-        ${fieldCondition}
-        ORDER BY ${dbColumnName}
-        LIMIT ${limit} OFFSET ${offset}
-      `;
-
-      const distinctResult = await clickhouse.query({
-        query: distinctQuery
-      });
-
-      const distinctData = await distinctResult.json();
-      const rows = distinctData && distinctData.data ? distinctData.data : distinctData;
-      const values = rows.map(item => item.value).filter(Boolean);
-
-      return {
-        displayName,
-        values,
-        totalCount,
-        pagination: {
-          currentPage: page,
-          totalPages: Math.ceil(totalCount / limit),
-          totalItems: totalCount,
-          itemsPerPage: limit,
-          hasNextPage: page < Math.ceil(totalCount / limit),
-          hasPrevPage: page > 1
-        }
-      };
     });
 
     const results = await Promise.all(filterPromises);
     
     // Structure the response
     const filterData = {};
-    const paginationInfo = {};
+    const countInfo = {};
+    const typeInfo = {};
     
-    results.forEach(({ displayName, values, totalCount, pagination }) => {
+    results.forEach(({ displayName, values, totalCount, type }) => {
       filterData[displayName] = values;
-      paginationInfo[displayName] = pagination;
+      if (type === 'list') {
+        countInfo[displayName] = totalCount;
+      }
+      typeInfo[displayName] = type;
     });
 
     return res.status(200).json({
       statusCode: 200,
       filters: filterData,
-      pagination: paginationInfo,
+      counts: countInfo,
+      types: typeInfo,
       query,
-      search: search || null,
-      requestParams: {
-        page,
-        limit,
-        offset
-      }
+      search: search || null
     });
 
   } catch (error) {
@@ -606,7 +674,6 @@ exports.searchFilterValues = async (req, res) => {
 exports.getFilterValuesByField = async (req, res) => {
   try {
     const query = req.query;
-    const fieldName = req.params.field;
     const modifiedQuery = queryModifier(query);
     const tableName = getTableName(modifiedQuery.informationOf);
     const { whereClause } = buildClickHouseWhereClause(query, modifiedQuery);
