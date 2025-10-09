@@ -17,8 +17,6 @@ const getFieldMappings = (informationOf) => {
       "Quantity Units": "quantityUnit",
       "Unit Price": "standardUnitRateUSD",
       "Currency": "currency",
-      "Product Name": "productName",
-      "Product Description": "productDescription",
       "Indian Company": "buyer",
       "Foreign Company": "supplier",
       "Foreign Country": "supplierCountry",
@@ -34,8 +32,6 @@ const getFieldMappings = (informationOf) => {
       "Quantity Units": "quantityUnit",
       "Unit Price": "standardUnitRateUSD",
       "Currency": "currency",
-      "Product Name": "productName",
-      "Product Description": "productDescription",
       "Indian Company": "supplier",
       "Foreign Company": "buyer",
       "Foreign Country": "buyerCountry",
@@ -347,12 +343,12 @@ exports.getFilterValues = async (req, res) => {
         });
 
         const rangeData = await rangeResult.json();
-        const rangeValues = rangeData && rangeData.data ? rangeData.data[0] : { min: 0, max: 0 };
+        const rangeValues = rangeData && rangeData.data ? rangeData.data[0] : { min: 0, max:1000000 };
 
         const filters = {};
         filters[filterField] = {
           min: parseFloat(rangeValues.min) || 0,
-          max: parseFloat(rangeValues.max) || 0
+          max: parseFloat(rangeValues.max) || 1000000
         };
 
         return res.status(200).json({
