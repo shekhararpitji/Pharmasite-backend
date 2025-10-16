@@ -1,33 +1,15 @@
 const db = require("../config/db");
-const {
-  loginService,
-  registerService,
-  get1Service,
-  getUser,
-  deleteUser,
-  createChildUserService,
-  getChildUsersService,
-  updateChildUserService,
-  deleteChildUserService
-} = require("../services/roleServies");
 const jwt = require('jsonwebtoken');
 
 const { validateToken } = require("../utils/authUtil");
-const {
-  createUser,
-  verifyEmail,
-  login,
-  getUserActivities,
-  getAllUsers,
-  updateUserAccess,
-  exportUserData
-} = require('../services/userService');
 const { sendAccountCreationNotification, sendAccessUpdateNotification } = require('../utils/emailUtil');
-const UserModel = require("../models/user.model");
+
+// Use ClickHouse services instead of MySQL
+const clickhouseUserService = require('../services/clickhouseUserService');
 
 exports.registerCtrl = async (req, res) => {
   try {
-    const user = await createUser(req.body, req.user.id);
+    const user = await clickhouseUserService.createUser(req.body, req.user.id);
     // await sendAccountCreationNotification(user.email, req.user.name, user.role);
     
     return res.status(201).json({
@@ -56,7 +38,7 @@ exports.createChildUserCtrl = async (req, res) => {
       partyName: req.user.partyName
     };
 
-    const user = await createUser(userData, req.user.id);
+    const user = await clickhouseUserService.createUser(userData, req.user.id);
     // await sendAccountCreationNotification(user.email, req.user.name, user.role);
     
     return res.status(201).json({
@@ -78,7 +60,7 @@ exports.createChildUserCtrl = async (req, res) => {
 
 exports.getChildUsersCtrl = async (req, res) => {
   try {
-    const users = await getAllUsers({
+    const users = await clickhouseUserService.getAllUsers({
       parentId: req.user.id,
       role: 'kid'
     });
@@ -97,27 +79,21 @@ exports.getChildUsersCtrl = async (req, res) => {
 
 exports.updateChildUserCtrl = async (req, res) => {
   try {
-    const childUser = await UserModel.findOne({
-      where: {
-        id: req.params.id,
-        parentId: req.user.id,
-        role: 'kid'
-      }
-    });
+    const childUser = await clickhouseUserService.getUserById(req.params.id);
 
-    if (!childUser) {
+    if (!childUser || childUser.parentId !== req.user.id || childUser.role !== 'kid') {
       return res.status(404).json({
         statusCode: 404,
         message: 'Child user not found'
       });
     }
 
-    await childUser.update(req.body);
+    const updatedUser = await clickhouseUserService.updateUser(req.params.id, req.body);
     
     return res.status(200).json({
       statusCode: 200,
       message: 'Child user updated successfully',
-      data: childUser
+      data: updatedUser
     });
   } catch (error) {
     return res.status(500).json({
@@ -129,22 +105,16 @@ exports.updateChildUserCtrl = async (req, res) => {
 
 exports.deleteChildUserCtrl = async (req, res) => {
   try {
-    const childUser = await UserModel.findOne({
-      where: {
-        id: req.params.id,
-        parentId: req.user.id,
-        role: 'kid'
-      }
-    });
+    const childUser = await clickhouseUserService.getUserById(req.params.id);
 
-    if (!childUser) {
+    if (!childUser || childUser.parentId !== req.user.id || childUser.role !== 'kid') {
       return res.status(404).json({
         statusCode: 404,
         message: 'Child user not found'
       });
     }
 
-    await childUser.destroy();
+    await clickhouseUserService.deleteUser(req.params.id);
     
     return res.status(200).json({
       statusCode: 200,
@@ -160,7 +130,7 @@ exports.deleteChildUserCtrl = async (req, res) => {
 
 exports.verifyEmailCtrl = async (req, res) => {
   try {
-    const user = await verifyEmail(req.query.token);
+    const user = await clickhouseUserService.verifyEmail(req.query.token);
     return res.status(200).json({
       statusCode: 200,
       message: 'Email verified successfully'
@@ -175,7 +145,7 @@ exports.verifyEmailCtrl = async (req, res) => {
 
 exports.loginCtrl = async (req, res) => {
   try {
-    const { user, access_token, sessionId } = await login(
+    const { user, access_token, sessionId } = await clickhouseUserService.login(
       req.body.email,
       req.body.password,
       req.ip,
@@ -210,7 +180,7 @@ exports.loginCtrl = async (req, res) => {
 
 exports.getUserActivitiesCtrl = async (req, res) => {
   try {
-    const activities = await getUserActivities(req.params.userId, req.user.id);
+    const activities = await clickhouseUserService.getUserActivities(req.params.userId, req.user.id);
     return res.status(200).json({
       statusCode: 200,
       data: activities
@@ -225,7 +195,7 @@ exports.getUserActivitiesCtrl = async (req, res) => {
 
 exports.getAllCtrl = async (req, res) => {
   try {
-    const users = await getAllUsers(req.query);
+    const users = await clickhouseUserService.getAllUsers(req.query);
     return res.status(200).json({
       statusCode: 200,
       data: users
@@ -248,10 +218,10 @@ exports.getDecodedUser = async (req, res, next) => {
       });
     }
     
-    const decoded = jwt.verify(token, 'klhdhsd&jigisd6$jhds#uds');
+    const decoded = jwt.verify(token, process.env.SECRET);
     
     // Get the latest user data from database
-    const user = await UserModel.findByPk(decoded.id);
+    const user = await clickhouseUserService.getUserById(decoded.id);
     if (!user) {
       return res.status(404).json({
         statusCode: 404,
@@ -285,8 +255,8 @@ exports.getDecodedUser = async (req, res, next) => {
 exports.updateUserAccessCtrl = async (req, res) => {
   try {
     const { isActive } = req.body;
-    const user = await updateUserAccess(req.params.id, isActive);
-    await sendAccessUpdateNotification(user.email, isActive);
+    const user = await clickhouseUserService.updateUserAccess(req.params.id, isActive);
+    // await sendAccessUpdateNotification(user.email, isActive);
     
     return res.status(200).json({
       statusCode: 200,
@@ -302,7 +272,7 @@ exports.updateUserAccessCtrl = async (req, res) => {
 
 exports.exportUserDataCtrl = async (req, res) => {
   try {
-    const data = await exportUserData(req.query);
+    const data = await clickhouseUserService.exportUserData(req.query);
     
     // Set headers for CSV download
     res.setHeader('Content-Type', 'text/csv');
@@ -311,17 +281,16 @@ exports.exportUserDataCtrl = async (req, res) => {
     // Convert data to CSV
     const csv = [
       // Headers
-      ['ID', 'Party Name', 'Name', 'Email', 'Mobile', 'Role', 'Parent Name', 'Parent Email', 'Created By', 'Verified', 'Active', 'Created At', 'Last Login'].join(','),
+      ['ID', 'Party Name', 'Name', 'Email', 'Mobile', 'Role', 'Parent ID', 'Created By', 'Verified', 'Active', 'Created At', 'Last Login'].join(','),
       // Data rows
       ...data.map(user => [
         user.id,
-        user.partyName,
+        user.partyName || '',
         user.name,
         user.email,
-        user.mobileNumber,
+        user.mobileNumber || '',
         user.role,
-        user.parentName || '',
-        user.parentEmail || '',
+        user.parentId || '',
         user.createdBy || '',
         user.isVerified,
         user.isActive,
@@ -341,7 +310,7 @@ exports.exportUserDataCtrl = async (req, res) => {
 
 exports.get1Ctrl = async (req, res) => {
   try {
-    const user = await getUser(req.params.id);
+    const user = await clickhouseUserService.getUserById(req.params.id);
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
@@ -354,8 +323,8 @@ exports.get1Ctrl = async (req, res) => {
 
 exports.deleteCtrl = async (req, res) => {
   try {
-    const user = await deleteUser(req.params.id);
-    res.status(200).json({ message: "User deleted successfully", user });
+    await clickhouseUserService.deleteUser(req.params.id);
+    res.status(200).json({ message: "User deleted successfully" });
   } catch (error) {
     console.error(error);
     res.status(400).json({ error: error.message });

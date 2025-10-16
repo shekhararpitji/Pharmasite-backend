@@ -34,7 +34,7 @@ const isLogedIn = async (req, res, next) => {
     }
 
     // Verify JWT token
-    const decoded = jwt.verify(token, 'secret');
+    const decoded = jwt.verify(token, process.env.SECRET);
     
     // Check if user exists and is active
     const user = await UserModel.findByPk(decoded.id);

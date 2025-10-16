@@ -14,6 +14,8 @@ const getFieldMappings = (informationOf) => {
       "Indian Port": "portOfDeparture",
       "H S Code": "H_S_Code",
       "Quantity": "standardQuantity",
+      "Product Name": "productName",
+      "Product Description": "productDescription",
       "Quantity Units": "quantityUnit",
       "Unit Price": "standardUnitRateUSD",
       "Currency": "currency",
@@ -31,6 +33,8 @@ const getFieldMappings = (informationOf) => {
       "Quantity": "standardQuantity",
       "Quantity Units": "quantityUnit",
       "Unit Price": "standardUnitRateUSD",
+      "Product Name": "productName",
+      "Product Description": "productDescription",
       "Currency": "currency",
       "Indian Company": "supplier",
       "Foreign Company": "buyer",
@@ -320,6 +324,16 @@ exports.getFilterValues = async (req, res) => {
 
     // If specific field is requested, get only that field
     const specificFieldMappings = getFieldMappings(query.informationOf);
+    
+    // Exclude "Product Name" and "Product Description" from filter values API response
+    if (filterField && (filterField === "Product Name" || filterField === "Product Description")) {
+      return res.status(400).json({
+        statusCode: 400,
+        message: `Field "${filterField}" is not available in filter values`,
+        query
+      });
+    }
+    
     if (filterField && specificFieldMappings[filterField]) {
       const dbColumnName = specificFieldMappings[filterField];
       
@@ -388,12 +402,13 @@ exports.getFilterValues = async (req, res) => {
         const countData = await countResult.json();
         const totalCount = countData && countData.data ? countData.data[0].totalCount : 0;
 
-        // Get all distinct values
+        // Get all distinct values with counts
         const distinctQuery = `
-          SELECT DISTINCT ${dbColumnName} as value
+          SELECT ${dbColumnName} as value, COUNT(*) as count
           FROM ${DATABASE_NAME}.${tableName}
           ${whereClause}
           ${fieldCondition}
+          GROUP BY ${dbColumnName}
           ORDER BY ${dbColumnName}
         `;
 
@@ -403,7 +418,7 @@ exports.getFilterValues = async (req, res) => {
 
         const distinctData = await distinctResult.json();
         const rows = distinctData && distinctData.data ? distinctData.data : distinctData;
-        const values = rows.map(item => item.value).filter(Boolean);
+        const values = rows.map(item => ({ value: item.value, count: item.count })).filter(item => item.value);
 
         const filters = {};
         filters[filterField] = values;
@@ -422,7 +437,11 @@ exports.getFilterValues = async (req, res) => {
 
     // If no specific field requested, get all fields
     const allFieldMappings = getFieldMappings(query.informationOf);
-    const filterPromises = Object.entries(allFieldMappings).map(async ([displayName, dbColumnName]) => {
+    // Exclude "Product Name" and "Product Description" from filter values API response
+    const filteredFieldMappings = Object.entries(allFieldMappings).filter(([displayName]) => 
+      displayName !== "Product Name" && displayName !== "Product Description"
+    );
+    const filterPromises = filteredFieldMappings.map(async ([displayName, dbColumnName]) => {
       // Check if this is a range field (standardQuantity or standardUnitRateUSD)
       const isRangeField = dbColumnName === 'standardQuantity' || dbColumnName === 'standardUnitRateUSD';
       
@@ -483,12 +502,13 @@ exports.getFilterValues = async (req, res) => {
         const countData = await countResult.json();
         const totalCount = countData && countData.data ? countData.data[0].totalCount : 0;
 
-        // Get all distinct values for this field
+        // Get all distinct values for this field with counts
         const distinctQuery = `
-          SELECT DISTINCT ${dbColumnName} as value
+          SELECT ${dbColumnName} as value, COUNT(*) as count
           FROM ${DATABASE_NAME}.${tableName}
           ${whereClause}
           ${fieldCondition}
+          GROUP BY ${dbColumnName}
           ORDER BY ${dbColumnName}
         `;
 
@@ -498,7 +518,7 @@ exports.getFilterValues = async (req, res) => {
 
         const distinctData = await distinctResult.json();
         const rows = distinctData && distinctData.data ? distinctData.data : distinctData;
-        const values = rows.map(item => item.value).filter(Boolean);
+        const values = rows.map(item => ({ value: item.value, count: item.count })).filter(item => item.value);
 
         return {
           displayName,

@@ -8,11 +8,16 @@ const roleRoutes = require("./routes/roleRoutes");
 const dataRoutes = require("./routes/dataRoutes");
 const clickhouseMetricsRoutes = require("./routes/clickhouseMetricsRoutes");
 const subscriptionRoutes = require("./routes/subscriptionRoutes");
+const analyticsRoutes = require("./routes/analyticsRoutes");
 // const syncDb = require('./models/sync.db')
 const cron = require('./crons/search-auto-suggestion');
 const cookieParser = require('cookie-parser');
 const { initClickHouse } = require('./config/clickhouse');
 const { initClickHouseExport } = require('./models/clickhouse/export.model');
+const { initClickHouseImport } = require('./models/clickhouse/import.model');
+const { initClickHouseUser } = require('./models/clickhouse/user.model');
+const { initClickHouseActivity } = require('./models/clickhouse/activity.model');
+const { initClickHouseSubscription } = require('./models/clickhouse/subscription.model');
 
 // Load environment variables from .env file
 dotenv.config();
@@ -48,6 +53,7 @@ app.use('/api/auth', roleRoutes);                    // Authentication & user ma
 app.use('/api/data', dataRoutes);                    // Data operations & analytics
 app.use('/api/clickhouse-metrics', clickhouseMetricsRoutes); // ClickHouse analytics
 app.use('/api/subscription', subscriptionRoutes);     // Subscription management
+app.use('/api/analytics', analyticsRoutes);          // ClickHouse-based user/subscription/activity analytics
 
 // Global error handler
 app.use((err, req, res, next) => {
@@ -84,6 +90,10 @@ const startServer = async () => {
           console.log('ClickHouse connection established');
           // Initialize ClickHouse tables and materialized views for analytics
           await initClickHouseExport();
+          await initClickHouseImport();
+          await initClickHouseUser();
+          await initClickHouseActivity();
+          await initClickHouseSubscription();
           console.log('ClickHouse tables and views initialized');
         } else {
           console.warn('ClickHouse connection failed, analytics will use MySQL');

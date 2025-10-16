@@ -19,12 +19,15 @@
     "import:xlsx": "node src/scripts/xlsx-to-clickhouse.js",
     "init:aggregations": "node src/scripts/initialize-aggregations.js",
     "init:import-tables": "node src/scripts/init-import-tables.js",
+    "migrate:mysql-to-clickhouse": "node src/scripts/mysql-to-clickhouse-migration.js",
+    "verify:migration": "node src/scripts/verify-migration.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "",
   "license": "ISC",
   "dependencies": {
     "@clickhouse/client": "^1.11.2",
+    "bcrypt": "^6.0.0",
     "bcryptjs": "^2.4.3",
     "body-parser": "^1.20.3",
     "check-disk-space": "^3.4.0",
