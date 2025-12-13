@@ -22,6 +22,7 @@ async function initClickHouseExport() {
           invoiceNumber String,
           itemNumber String,
           H_S_Code String,
+          chapter String,
           productDescription String,
           productName String,
           CAS_Number String,

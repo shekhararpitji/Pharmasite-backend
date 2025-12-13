@@ -36,5 +36,7 @@ router.get('/filter-values', cacheMiddleware, clickhouseMetricsController.getFil
 router.get('/filters/metadata', cacheMiddleware, clickhouseMetricsController.getFilterMetadata);
 router.get('/filters/search', cacheMiddleware, clickhouseMetricsController.searchFilterValues);
 router.get('/filters/values/:field', cacheMiddleware, clickhouseMetricsController.getFilterValuesByField);
+// Chapters endpoint - returns distinct chapter codes present in the DB
+router.get('/chapters', cacheMiddleware, clickhouseMetricsController.getChapters);
 
 module.exports = router; 

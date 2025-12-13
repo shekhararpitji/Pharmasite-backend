@@ -16,7 +16,7 @@ const getFieldMappings = (informationOf) => {
       "Quantity": "standardQuantity",
       "Product Name": "productName",
       "Product Description": "productDescription",
-      "Quantity Units": "quantityUnit",
+      "Quantity Units": "standardQuantityUnit",
       "Unit Price": "standardUnitRateUSD",
       "Currency": "currency",
       "Indian Company": "buyer",
@@ -31,7 +31,7 @@ const getFieldMappings = (informationOf) => {
       "Indian Port": "portOfOrigin",
       "H S Code": "H_S_Code",
       "Quantity": "standardQuantity",
-      "Quantity Units": "quantityUnit",
+      "Quantity Units": "standardQuantityUnit",
       "Unit Price": "standardUnitRateUSD",
       "Product Name": "productName",
       "Product Description": "productDescription",
@@ -165,6 +165,18 @@ const buildClickHouseWhereClause = (query, modifiedQuery) => {
     whereConditions.push(`(${searchConditions.join(' OR ')})`);
   }
 
+  // Chapter filter - accepts multiple comma-separated values
+  if (query.chapter) {
+    const chapters = query.chapter.split(',').map(ch => ch.trim());
+    if (chapters.length > 0) {
+      const escapedChapters = chapters.map(chapter => {
+        const escapedValue = chapter.replace(/'/g, "''"); // Escape single quotes
+        return `'${escapedValue}'`;
+      });
+      whereConditions.push(`chapter IN (${escapedChapters.join(', ')})`);
+    }
+  }
+
   // Additional filters
   if (query.filters && typeof query.filters === 'object') {
     const filterFieldMappings = getFieldMappings(query.informationOf);
@@ -225,20 +237,37 @@ const getTableName = (informationOf) => {
 };
 
 // Generic function to get grouped data from ClickHouse
-const getClickHouseGroupedData = async (tableName, whereClause, groupByField, aggregateField, limit = 6) => {
+const getClickHouseGroupedData = async (tableName, whereClause, groupByField, aggregateField, limit = 6, sortByYear = false) => {
   try {
-    const query = `
-      SELECT 
-        ${groupByField},
-        sum(${aggregateField}) as total,
-        count(*) as count
-      FROM ${DATABASE_NAME}.${tableName}
-      ${whereClause}
-      GROUP BY ${groupByField}
-      ORDER BY total DESC
-      LIMIT ${limit}
-    `;
-
+    // Determine sort order based on whether we're sorting by year
+    const sortOrder = sortByYear && groupByField === 'year' ? `${groupByField} ASC` : 'total DESC';
+    
+    let query;
+    if (groupByField === 'year') {
+      query = `
+        SELECT 
+          ${groupByField},
+          sum(${aggregateField}) as total,
+          count(*) as count
+        FROM ${DATABASE_NAME}.${tableName}
+        ${whereClause}
+        GROUP BY ${groupByField}
+        ORDER BY ${groupByField} ASC
+        LIMIT ${limit}
+      `;
+    } else {
+      query = `
+        SELECT 
+          ${groupByField},
+          sum(${aggregateField}) as total,
+          count(*) as count
+        FROM ${DATABASE_NAME}.${tableName}
+        ${whereClause}
+        GROUP BY ${groupByField}
+        ORDER BY ${sortOrder}
+        LIMIT ${limit}
+      `;
+    }
 
     const result = await clickhouse.query({
       query
@@ -283,7 +312,7 @@ exports.getSummaryStats = async (req, res) => {
     const summaryQuery = `
       SELECT 
         count(*) as totalRecords,
-        sum(quantity) as totalQuantity,
+        sum(standardQuantity) as totalQuantity,
         sum(totalValueUSD) as totalValueUSD,
         countDistinct(buyer) as uniqueBuyers,
         countDistinct(supplier) as uniqueSuppliers
@@ -816,7 +845,9 @@ exports.getAllTopMetrics = async (req, res) => {
     // Fetch all metrics concurrently
     const metricsPromises = metricsConfig.map(async (config) => {
       try {
-        const data = await getClickHouseGroupedData(tableName, whereClause, config.groupBy, config.aggregate);
+        // For year-based metrics, we want ascending order instead of descending by total
+        const isYearMetric = config.groupBy === 'year';
+        const data = await getClickHouseGroupedData(tableName, whereClause, config.groupBy, config.aggregate, 6, isYearMetric);
         return { [config.key]: data };
       } catch (error) {
         console.error(`Error fetching ${config.key}:`, error.message);
@@ -858,6 +889,64 @@ exports.getAllTopMetrics = async (req, res) => {
       message: 'Internal server error',
       error: error.message
     });
+  }
+};
+
+// Get distinct chapters present in the ClickHouse tables (import/export)
+exports.getChapters = async (req, res) => {
+  try {
+    const query = req.query || {};
+    const info = query.informationOf; // 'import' | 'export' | undefined -> both
+    const search = (query.search || '').toString().trim();
+    const startDate = query.startDate || null;
+    const endDate = query.endDate || null;
+
+    const tables = [];
+    if (info === 'import') tables.push('import_data');
+    else if (info === 'export') tables.push('export_data');
+    else tables.push('export_data', 'import_data');
+
+    const queries = tables.map(tableName => {
+      let where = `WHERE chapter IS NOT NULL AND chapter != ''`;
+      if (search) {
+        const esc = search.replace(/'/g, "''");
+        where += ` AND chapter ILIKE '%${esc}%'`;
+      }
+      if (startDate) {
+        where += ` AND shippingBillDate >= '${startDate}'`;
+      }
+      if (endDate) {
+        where += ` AND shippingBillDate <= '${endDate}'`;
+      }
+      return `SELECT chapter, count() as cnt FROM ${DATABASE_NAME}.${tableName} ${where} GROUP BY chapter`;
+    });
+
+    const results = await Promise.all(queries.map(q => clickhouse.query({ query: q })));
+    const dataSets = await Promise.all(results.map(r => r.json()));
+
+    let chapters = [];
+    for (const ds of dataSets) {
+      const rows = ds && ds.data ? ds.data : (Array.isArray(ds) ? ds : []);
+      for (const row of rows) {
+        if (row && row.chapter) chapters.push(row.chapter.toString());
+      }
+    }
+
+    // Unique & sorted
+    const uniqueChapters = Array.from(new Set(chapters)).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+
+    return res.status(200).json({
+      statusCode: 200,
+      chapters: uniqueChapters,
+      count: uniqueChapters.length,
+      informationOf: info || 'both',
+      search: search || null,
+      startDate: startDate || null,
+      endDate: endDate || null
+    });
+  } catch (error) {
+    console.error('Error fetching chapters:', error && error.message ? error.message : error);
+    return res.status(500).json({ statusCode: 500, message: 'Internal server error' });
   }
 };
 

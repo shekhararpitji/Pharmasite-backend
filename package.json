@@ -21,6 +21,7 @@
     "init:import-tables": "node src/scripts/init-import-tables.js",
     "migrate:mysql-to-clickhouse": "node src/scripts/mysql-to-clickhouse-migration.js",
     "verify:migration": "node src/scripts/verify-migration.js",
+    "seed:clickhouse-admin": "node src/scripts/seed-clickhouse-admin.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "",

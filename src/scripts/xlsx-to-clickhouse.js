@@ -36,6 +36,21 @@ function cleanData(record) {
   // Generate UUID for id field
   cleanedRecord.id = uuidv4();
 
+  // Define all valid fields that should be in ClickHouse
+  // This excludes extra columns like '2_Digit_Code', '4_Digit_Code'
+  const validFields = new Set([
+    'id', 'informationOf', 'yearMonth', 'year', 'portOfOrigin', 'modeOfShipment',
+    'indianPortCode', 'shippingBillDate', 'shippingBillNumber', 'shippingBillStatus',
+    'invoiceNumber', 'itemNumber', 'H_S_Code', 'chapter', 'productDescription',
+    'productName', 'CAS_Number', 'quantity', 'quantityUnit', 'standardQuantity',
+    'standardQuantityUnit', 'standardUnitRateINR', 'standardUnitRateUSD',
+    'itemRateINR', 'itemRateUSD', 'totalValueINR', 'totalValueUSD',
+    'itemRateInvoice', 'currency', 'totalValueInvoice', 'freightOnBoardINR',
+    'freightOnBoardUSD', 'importExportCode', 'supplier', 'supplierRaw',
+    'supplierAddress', 'supplierCity', 'supplierCountry', 'buyer', 'buyerRaw',
+    'companyStatus', 'portOfDeparture', 'buyerCountry', 'region', 'createdAt', 'updatedAt'
+  ]);
+
   // Clean text fields - remove tabs, newlines, and excessive whitespace
   const textFields = [
     'informationOf', 'yearMonth', 'portOfOrigin', 'modeOfShipment',
@@ -97,6 +112,15 @@ function cleanData(record) {
   } else {
     cleanedRecord.year = 0;
   }
+
+  // Extract chapter from H_S_Code (first 2 digits)
+  if (cleanedRecord.H_S_Code && cleanedRecord.H_S_Code.trim().length >= 2) {
+    const hsCode = cleanedRecord.H_S_Code.toString().trim().replace(/[^\d]/g, '');
+    cleanedRecord.chapter = hsCode.substring(0, 2);
+  } else {
+    cleanedRecord.chapter = '';
+  }
+
   const convertDateFormat = (dateString) => {
     if (!dateString || dateString === '' || dateString === 'null' || dateString === 'undefined') {
       throw new Error('Date string is empty or null');
@@ -296,6 +320,7 @@ async function importXLSX(filePath, sheetName = null, batchSize = 50000) {
               invoiceNumber: cleanedRecord.invoiceNumber,
               itemNumber: cleanedRecord.itemNumber,
               H_S_Code: cleanedRecord.H_S_Code,
+              chapter: cleanedRecord.chapter,
               productDescription: cleanedRecord.productDescription,
               productName: cleanedRecord.productName,
               CAS_Number: cleanedRecord.CAS_Number,
@@ -333,10 +358,18 @@ async function importXLSX(filePath, sheetName = null, batchSize = 50000) {
             // Convert to TSV line with proper escaping
             const values = Object.values(orderedRecord).map(value => {
               if (typeof value === 'string') {
-                // Escape tabs, newlines, and backslashes for TSV
-                return value.replace(/[\t\n\r\\]/g, ' ');
+                // Escape special characters for TSV format
+                // Replace backslashes first to avoid double-escaping
+                let escaped = value.replace(/\\/g, '\\\\');
+                // Escape tabs with \t
+                escaped = escaped.replace(/\t/g, '\\t');
+                // Escape newlines with \n
+                escaped = escaped.replace(/\n/g, '\\n');
+                // Escape carriage returns with \r
+                escaped = escaped.replace(/\r/g, '\\r');
+                return escaped;
               }
-              return value;
+              return String(value !== null && value !== undefined ? value : '');
             });
             
             callback(null, values.join('\t') + '\n');

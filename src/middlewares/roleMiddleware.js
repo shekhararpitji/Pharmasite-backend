@@ -1,6 +1,6 @@
 const jwt = require('jsonwebtoken');
-const UserModel = require('../models/user.model');
-const SubscriptionModel = require('../models/subscription.model');
+const clickhouseUserService = require('../services/clickhouseUserService');
+const clickhouseSubscriptionService = require('../services/clickhouseSubscriptionService');
 const dotenv = require('dotenv');
 dotenv.config();
 
@@ -36,8 +36,8 @@ const isLogedIn = async (req, res, next) => {
     // Verify JWT token
     const decoded = jwt.verify(token, process.env.SECRET);
     
-    // Check if user exists and is active
-    const user = await UserModel.findByPk(decoded.id);
+    // Check if user exists and is active using ClickHouse
+    const user = await clickhouseUserService.getUserById(decoded.id);
     if (!user || !user.isActive) {
       return res.status(401).json({ 
         message: 'Invalid token or user not found.',
@@ -46,12 +46,12 @@ const isLogedIn = async (req, res, next) => {
     }
 
     // Check if user's email is verified
-    if (!user.isVerified) {
-      return res.status(401).json({ 
-        message: 'Please verify your email before accessing this resource.',
-        statusCode: 401 
-      });
-    }
+    // if (!user.isVerified) {
+    //   return res.status(401).json({ 
+    //     message: 'Please verify your email before accessing this resource.',
+    //     statusCode: 401 
+    //   });
+    // }
 
     // Attach user to request object for use in subsequent middleware/routes
     req.user = user;
@@ -134,12 +134,7 @@ const isParent = (req, res, next) => {
  */
 const hasActiveSubscription = async (req, res, next) => {
   try {
-    const subscription = await SubscriptionModel.findOne({
-      where: { 
-        userId: req.user.id,
-        isActive: true 
-      }
-    });
+    const subscription = await clickhouseSubscriptionService.getActiveSubscriptionByUserId(req.user.id);
 
     if (!subscription) {
       return res.status(403).json({ 
@@ -149,7 +144,7 @@ const hasActiveSubscription = async (req, res, next) => {
     }
 
     // Check if subscription has expired
-    if (subscription.endDate && new Date() > new Date(subscription.endDate)) {
+    if (subscription.accessValidity && new Date() > new Date(subscription.accessValidity)) {
       return res.status(403).json({ 
         message: 'Access denied. Subscription has expired.',
         statusCode: 403 

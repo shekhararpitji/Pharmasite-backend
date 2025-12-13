@@ -19,6 +19,7 @@ async function initClickHouseUser() {
           role String,
           parentId Nullable(UInt32),
           createdBy Nullable(UInt32),
+          subscriptionId Nullable(UInt32),
           isVerified UInt8,
           verificationToken Nullable(String),
           verificationTokenExpiry Nullable(DateTime),
@@ -34,6 +35,32 @@ async function initClickHouseUser() {
         SETTINGS index_granularity = 8192
       `
     });
+    
+    // Add subscriptionId column if it doesn't exist (for existing tables)
+    try {
+      // Check if column exists by querying table structure
+      const tableInfo = await clickhouse.query({
+        query: `DESCRIBE TABLE ${DATABASE_NAME}.${TABLE_NAME}`,
+        format: 'JSONEachRow'
+      });
+      const columns = await tableInfo.json();
+      const hasSubscriptionId = columns.some(col => col.name === 'subscriptionId');
+      
+      if (!hasSubscriptionId) {
+        await clickhouse.command({
+          query: `
+            ALTER TABLE ${DATABASE_NAME}.${TABLE_NAME}
+            ADD COLUMN subscriptionId Nullable(UInt32)
+          `
+        });
+        console.log('subscriptionId column added to users table');
+      } else {
+        console.log('subscriptionId column already exists in users table');
+      }
+    } catch (alterError) {
+      // Table might not exist yet (will be created above) or other error
+      console.warn('Note: Could not check/add subscriptionId column:', alterError.message);
+    }
     
     console.log('users table created successfully in ClickHouse');
     return true;

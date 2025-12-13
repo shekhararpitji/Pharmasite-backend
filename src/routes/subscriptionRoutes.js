@@ -16,10 +16,10 @@ const router = express.Router();
 // router.get('/plans', getAllSubscriptions);
 
 // Admin-only routes
-router.post('/', isAdmin, createSubscription);
-router.put('/:id', isAdmin, updateSubscription);
-router.delete('/:id', isAdmin, deleteSubscription);
-router.post('/assign', isAdmin, assignSubscription);
+router.post('/', isLogedIn, isAdmin, createSubscription);
+router.put('/:id', isLogedIn, isAdmin, updateSubscription);
+router.delete('/:id', isLogedIn, isAdmin, deleteSubscription);
+router.post('/assign', isLogedIn, isAdmin, assignSubscription);
 
 // Search routes
 router.get('/', isLogedIn, getAllSubscriptions); // Supports query params for clientName, contactPerson, email

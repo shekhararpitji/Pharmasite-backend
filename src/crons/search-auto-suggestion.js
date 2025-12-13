@@ -1,9 +1,9 @@
 const cron = require('node-cron');
 const Redis = require('ioredis');
-const ImportModel = require('../models/import.model')
-const ExportModel = require('../models/export.model')
+const { clickhouse } = require('../config/clickhouse');
 const redis = require('../config/chached-config')
 
+const DATABASE_NAME = process.env.CLICKHOUSE_DB || 'pharma_analytics';
 
 redis.on('connect', () => {
     console.log('Connected to Redis');
@@ -17,16 +17,35 @@ redis.on('error', (err) => {
 const fetchAndCacheData = async () => {
   try {
 
-    const importData = await ImportModel.findAll({
-      attributes: ['H_S_Code', 'productName', 'productDescription'],
+    // Fetch unique products from import_data table
+    const importResult = await clickhouse.query({
+      query: `
+        SELECT DISTINCT H_S_Code, productName, productDescription
+        FROM ${DATABASE_NAME}.import_data
+        WHERE H_S_Code IS NOT NULL AND productName IS NOT NULL
+        ORDER BY productName
+        LIMIT 10000
+      `,
+      format: 'JSONEachRow'
     });
-
     
-    const exportData = await ExportModel.findAll({
-      attributes: ['H_S_Code', 'productName', 'productDescription'],
+    const importData = await importResult.json();
+
+    // Fetch unique products from export_data table
+    const exportResult = await clickhouse.query({
+      query: `
+        SELECT DISTINCT H_S_Code, productName, productDescription
+        FROM ${DATABASE_NAME}.export_data
+        WHERE H_S_Code IS NOT NULL AND productName IS NOT NULL
+        ORDER BY productName
+        LIMIT 10000
+      `,
+      format: 'JSONEachRow'
     });
-
     
+    const exportData = await exportResult.json();
+
+    // Cache data with 24-hour expiry (86400 seconds)
     await redis.setex('import_suggested_data', 86400, JSON.stringify(importData));
     await redis.setex('export_suggested_data', 86400, JSON.stringify(exportData));
 

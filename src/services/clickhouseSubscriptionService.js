@@ -50,7 +50,7 @@ const getAllSubscriptions = async (filters = {}) => {
         SELECT *
         FROM ${DATABASE_NAME}.${TABLE_NAME}
         ${whereClause}
-        ORDER BY createdAt DESC
+        ORDER BY updatedAt DESC, createdAt DESC
       `,
       format: 'JSONEachRow'
     });
@@ -72,7 +72,7 @@ const getSubscriptionById = async (subscriptionId) => {
         SELECT *
         FROM ${DATABASE_NAME}.${TABLE_NAME}
         WHERE id = ${subscriptionId}
-        ORDER BY createdAt DESC
+        ORDER BY updatedAt DESC, createdAt DESC
         LIMIT 1
       `,
       format: 'JSONEachRow'
@@ -243,12 +243,54 @@ const updateSubscription = async (subscriptionId, updateData) => {
       updatedAt: now
     };
 
-    // Insert updated record
-    await clickhouse.insert({
-      table: `${DATABASE_NAME}.${TABLE_NAME}`,
-      values: [updatedSubscription],
-      format: 'JSONEachRow'
-    });
+    // Check if status is being updated (status is in ORDER BY, so we need delete-then-insert)
+    const isStatusUpdate = updateData.status && updateData.status !== subscription.status;
+    
+    if (isStatusUpdate) {
+      // If status is being updated, use delete-then-insert pattern
+      // Delete old records for this subscription
+      await clickhouse.command({
+        query: `
+          ALTER TABLE ${DATABASE_NAME}.${TABLE_NAME}
+          DELETE WHERE id = ${subscriptionId}
+        `
+      });
+
+      // Insert updated record
+      await clickhouse.insert({
+        table: `${DATABASE_NAME}.${TABLE_NAME}`,
+        values: [updatedSubscription],
+        format: 'JSONEachRow'
+      });
+    } else {
+      // Build UPDATE statement dynamically (excluding status if it's not changing)
+      const updateFields = [];
+      Object.keys(updatedSubscription).forEach(key => {
+        if (key !== 'id' && key !== 'createdAt' && key !== 'status') {
+          const value = updatedSubscription[key];
+          if (value === null || value === undefined) {
+            updateFields.push(`${key} = NULL`);
+          } else if (typeof value === 'string') {
+            updateFields.push(`${key} = '${value.replace(/'/g, "''")}'`);
+          } else if (typeof value === 'boolean') {
+            updateFields.push(`${key} = ${value ? 1 : 0}`);
+          } else {
+            updateFields.push(`${key} = ${value}`);
+          }
+        }
+      });
+
+      // Update subscription record using ALTER TABLE UPDATE (status not included)
+      if (updateFields.length > 0) {
+        await clickhouse.command({
+          query: `
+            ALTER TABLE ${DATABASE_NAME}.${TABLE_NAME}
+            UPDATE ${updateFields.join(', ')}
+            WHERE id = ${subscriptionId}
+          `
+        });
+      }
+    }
 
     return updatedSubscription;
   } catch (error) {
@@ -286,7 +328,19 @@ const deleteSubscription = async (subscriptionId) => {
     }
 
     // Mark as cancelled
+    // Note: Since 'status' is in the ORDER BY (primary key), we can't use ALTER TABLE UPDATE
+    // We need to use delete-then-insert pattern for status updates
     const now = new Date().toISOString().slice(0, 19).replace('T', ' ');
+    
+    // Delete old records for this subscription
+    await clickhouse.command({
+      query: `
+        ALTER TABLE ${DATABASE_NAME}.${TABLE_NAME}
+        DELETE WHERE id = ${subscriptionId}
+      `
+    });
+
+    // Insert updated record with cancelled status
     await clickhouse.insert({
       table: `${DATABASE_NAME}.${TABLE_NAME}`,
       values: [{
@@ -321,7 +375,7 @@ const assignSubscription = async (userId, subscriptionId) => {
         SELECT *
         FROM ${DATABASE_NAME}.users
         WHERE id = ${userId}
-        ORDER BY createdAt DESC
+        ORDER BY updatedAt DESC, createdAt DESC
         LIMIT 1
       `,
       format: 'JSONEachRow'
@@ -339,16 +393,17 @@ const assignSubscription = async (userId, subscriptionId) => {
       throw new Error('Only parent users can be assigned subscriptions');
     }
 
-    // Update user with subscription ID (insert new record in ClickHouse)
+    // Update user with subscription ID using ALTER TABLE UPDATE
     const now = new Date().toISOString().slice(0, 19).replace('T', ' ');
-    await clickhouse.insert({
-      table: `${DATABASE_NAME}.users`,
-      values: [{
-        ...user,
-        subscriptionId: subscriptionId,
-        updatedAt: now
-      }],
-      format: 'JSONEachRow'
+    
+    await clickhouse.command({
+      query: `
+        ALTER TABLE ${DATABASE_NAME}.users
+        UPDATE 
+          subscriptionId = ${subscriptionId},
+          updatedAt = '${now.replace(/'/g, "''")}'
+        WHERE id = '${userId.replace(/'/g, "''")}'
+      `
     });
 
     return {
@@ -373,7 +428,7 @@ const getUserSubscription = async (userId) => {
         FROM ${DATABASE_NAME}.users u
         LEFT JOIN ${DATABASE_NAME}.subscriptions s ON u.subscriptionId = s.id
         WHERE u.id = ${userId}
-        ORDER BY u.createdAt DESC
+        ORDER BY u.updatedAt DESC, u.createdAt DESC
         LIMIT 1
       `,
       format: 'JSONEachRow'
@@ -387,6 +442,32 @@ const getUserSubscription = async (userId) => {
   }
 };
 
+/**
+ * Get active subscription by user ID
+ * Used by authentication middleware to check subscription status
+ */
+const getActiveSubscriptionByUserId = async (userId) => {
+  try {
+    const result = await clickhouse.query({
+      query: `
+        SELECT *
+        FROM ${DATABASE_NAME}.${TABLE_NAME}
+        WHERE userId = ${userId}
+        AND status = 'active'
+        ORDER BY updatedAt DESC, createdAt DESC
+        LIMIT 1
+      `,
+      format: 'JSONEachRow'
+    });
+
+    const subscriptions = await result.json();
+    return subscriptions.length > 0 ? subscriptions[0] : null;
+  } catch (error) {
+    console.error('Error getting active subscription for user:', error);
+    throw error;
+  }
+};
+
 module.exports = {
   getAllSubscriptions,
   getSubscriptionById,
@@ -394,7 +475,8 @@ module.exports = {
   updateSubscription,
   deleteSubscription,
   assignSubscription,
-  getUserSubscription
+  getUserSubscription,
+  getActiveSubscriptionByUserId
 };
 
 

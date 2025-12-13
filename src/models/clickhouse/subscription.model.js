@@ -36,7 +36,7 @@ async function initClickHouseSubscription() {
           updatedAt DateTime
         ) 
         ENGINE = MergeTree()
-        ORDER BY (id, status, startDate)
+        ORDER BY (id, startDate)
         PARTITION BY toYYYYMM(startDate)
         SETTINGS index_granularity = 8192
       `
