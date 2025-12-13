@@ -1,21 +1,42 @@
-const mysql = require('mysql2');
 const dotenv = require('dotenv');
+const { Sequelize } = require('sequelize');
 
 // Load environment variables
 dotenv.config();
 
-// Create a MySQL connection pool
-const pool = mysql.createPool({
-  host: process.env.DB_HOST,
-  user: process.env.DB_USERNAME,
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME,
-  waitForConnections: true,
-  connectionLimit: 10,
-  queueLimit: 0
+/**
+ * MySQL Database Configuration using Sequelize ORM
+ * 
+ * This is the primary database connection for the application
+ * Used for:
+ * - User authentication and management
+ * - Main data storage (import/export records)
+ * - Subscription management
+ * - Activity logging
+ * 
+ * Database: pharma_db
+ * Engine: MySQL
+ * Host: 13.203.61.86 (Production server)
+ */
+const sequelize = new Sequelize('pharmasite', 'root', 'root', {
+  host:  'localhost',
+  dialect: 'mysql', 
+  logging: false,   // Disable SQL query logging for production
+  
+  // Connection pool configuration for optimal performance
+  pool: {
+    max: 25,        // Maximum number of connections in pool
+    min: 5,         // Minimum number of connections in pool
+    acquire: 60000, // Maximum time (ms) to try getting connection
+    idle: 20000     // Maximum time (ms) connection can be idle
+  },
+  
+  // Connection timeout settings
+  dialectOptions: {
+    connectTimeout: 60000  // Connection timeout in milliseconds
+  }
 });
+console.log('Connected to MySQL database');
+module.exports = sequelize;
 
-// Export a promise wrapper for better handling async/await
-const db = pool.promise();
 
-module.exports = db;

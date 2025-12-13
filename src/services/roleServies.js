@@ -1,67 +1,178 @@
 const bcrypt = require("bcryptjs");
 const { createToken } = require("../utils/authUtil");
-const db = require("../config/db");
+const sequelize = require('../config/db');
+const UserModel = require('../models/user.model');
 const { v4: uuidv4 } = require('uuid');
-exports.registerService = async (req) => {
-  const { email, password, cPassword, phone, role, active, firstName, lastName} =
-    req.body;
 
-    if (password !== cPassword) {
-      throw new Error('Password and Confirm password does not match');  
+exports.registerService = async (req, role) => {
+  try {
+    const { email, password, confirmPassword, ...rest } = req.body;
+
+    if (password !== confirmPassword) {
+      throw new Error('Password and Confirm password do not match');
     }
-    const existingUserEmail = await db.query(`SELECT email FROM users WHERE email = ? LIMIT 1`, [email]);
-    if (existingUserEmail.length > 0 && existingUserEmail[0][0].email === email) {
-      throw new Error('Email already registered');
+
+    const existingUser = await UserModel.findOne({
+      where: { email }
+    });
+
+    if (existingUser) {
+      throw new Error('User already registered');
     }
-    
+
     const hashPassword = await bcrypt.hash(password, 10);
-    const saveUser = {
-      userId : uuidv4(),
+
+    const newUser = await UserModel.create({
+      userId: uuidv4(),
+      ...rest,
       email,
       password: hashPassword,
-      phone,
       role,
-      active,
-      firstName,
-      lastName,
-      createdDate: new Date(),
-      updatedDate: new Date()
-    };
-    const user = await db.query(`INSERT INTO users SET ? `, saveUser)
-    if (!user) {
-      throw new Error('Error in saving!!!');
-    }
-    return saveUser;
+      sessionId: null
+    });
+
+    return newUser;
+  } catch (error) {
+    console.error("Error in registerService:", error.message);
+    throw error;
+  }
 };
 
-exports.loginService = async (req, res) => {
+exports.createChildUserService = async (req) => {
+  try {
+    const { email, password, confirmPassword, ...rest } = req.body;
+    const parentId = req.user.id;
+
+    if (password !== confirmPassword) {
+      throw new Error('Password and Confirm password do not match');
+    }
+
+    const existingUser = await UserModel.findOne({
+      where: { email }
+    });
+
+    if (existingUser) {
+      throw new Error('User already registered');
+    }
+
+    const hashPassword = await bcrypt.hash(password, 10);
+
+    const newChildUser = await UserModel.create({
+      userId: uuidv4(),
+      ...rest,
+      email,
+      password: hashPassword,
+      role: 'child',
+      parentId,
+      sessionId: null
+    });
+
+    return newChildUser;
+  } catch (error) {
+    console.error("Error in createChildUserService:", error.message);
+    throw error;
+  }
+};
+
+exports.getChildUsersService = async (parentId) => {
+  try {
+    const children = await UserModel.findAll({
+      where: { parentId, role: 'child' },
+      attributes: { exclude: ['password'] }
+    });
+    return children;
+  } catch (error) {
+    console.error("Error in getChildUsersService:", error.message);
+    throw error;
+  }
+};
+
+exports.updateChildUserService = async (parentId, childId, updateData) => {
+  try {
+    const childUser = await UserModel.findOne({
+      where: { id: childId, parentId, role: 'child' }
+    });
+
+    if (!childUser) {
+      throw new Error('Child user not found or unauthorized');
+    }
+
+    const updatedUser = await childUser.update(updateData);
+    return updatedUser;
+  } catch (error) {
+    console.error("Error in updateChildUserService:", error.message);
+    throw error;
+  }
+};
+
+exports.deleteChildUserService = async (parentId, childId) => {
+  try {
+    const childUser = await UserModel.findOne({
+      where: { id: childId, parentId, role: 'child' }
+    });
+
+    if (!childUser) {
+      throw new Error('Child user not found or unauthorized');
+    }
+
+    await childUser.destroy();
+    return true;
+  } catch (error) {
+    console.error("Error in deleteChildUserService:", error.message);
+    throw error;
+  }
+};
+
+exports.loginService = async (req) => {
   const { email, password } = req.body;
 
-  let [user] = await db.query(`SELECT * FROM users WHERE email = ? `,[email]);
-  user = user[0];
-  const result = await bcrypt.compare(password, user.password);
+  const user = await UserModel.findOne({
+    where: { email },
+    raw: true
+  });
+
   if (!user) {
-    return res.status(404).json({ message: "Not found" });
-  } else if (!result) {
-    return res.status(404).json({ message: "Wrong password" });
+    throw new Error("User not found");
   }
 
-  const access_token = createToken(user);
-  return { access_token };
+  const isPasswordCorrect = await bcrypt.compare(password, user.password);
+  if (!isPasswordCorrect) {
+    throw new Error("Incorrect password");
+  }
+
+  const sessionId = uuidv4();
+  await UserModel.update(
+    { sessionId },
+    { where: { email: user.email } }
+  );
+
+  const access_token = createToken({ ...user, sessionId });
+
+  return { access_token, sessionId };
 };
 
-exports.getUser = async (email) => {
-  const [user] = await db.query(`SELECT * FROM users WHERE email = ?`,[email]);
-  return user[0];
+exports.getUser = async (id) => {
+  try {
+    const user = await UserModel.findByPk(id, {
+      attributes: { exclude: ['password'] }
+    });
+    return user;
+  } catch (error) {
+    console.error("Error in getUser:", error.message);
+    throw error;
+  }
 };
 
 exports.deleteUser = async (id) => {
-  let [active] = await db.query(`SELECT * FROM users WHERE userId = ?`[id]);
-  if (active.length > 0 && active[0].id === id) {
-      active= active[0].active
-    }else{
+  try {
+    const user = await UserModel.findByPk(id);
+    if (!user) {
       throw new Error('User not found');
     }
-  const [user] = await db.query(`UPDATE users SET active = ? WHERE userId = ?`[!active,id]);
-  return user
-}
+    await user.destroy();
+    return user;
+  } catch (error) {
+    console.error("Error in deleteUser:", error.message);
+    throw error;
+  }
+};

@@ -2,40 +2,49 @@ const express = require("express");
 const {
   registerCtrl,
   loginCtrl,
+  verifyEmailCtrl,
   get1Ctrl,
   getAllCtrl,
   deleteCtrl,
+  getUserActivitiesCtrl,
+  updateUserAccessCtrl,
+  exportUserDataCtrl,
+  createChildUserCtrl,
+  getChildUsersCtrl,
+  updateChildUserCtrl,
+  deleteChildUserCtrl,
+  getDecodedUser
 } = require("../controllers/roleController");
 const {
   validateRegistration,
   validateLogin,
+  validateChildUserRegistration
 } = require("../validators/roleValidator");
-const { isLogedIn, isAdmin } = require("../middlewares/roleMiddleware");
+const { isLogedIn, isAdmin, isParent } = require("../middlewares/roleMiddleware");
 
 const router = express.Router();
 
-router.post("/register", isLogedIn, isAdmin, validateRegistration, registerCtrl);
-
+// Public routes
 router.post("/login", validateLogin, loginCtrl);
-/**
- * @swagger
- * /600/dth/role/get-all:
- *   get:
- *     summary: Get all roles
- *     parameters:
- *       - in: path
- *         schema:
- *           type: string
- *         description: ID of the role
- *     responses:
- *       200:
- *         description: Successful response
- */
+router.get("/verify-email", verifyEmailCtrl);
 
-router.get("/get-all", isLogedIn, isAdmin, getAllCtrl);
+// Admin routes
+router.post("/register", validateRegistration, isLogedIn, isAdmin, registerCtrl);
+router.get("/me", getDecodedUser);
+router.get("/users", isLogedIn, isAdmin, getAllCtrl);
+router.get("/users/:id", isLogedIn, isAdmin, get1Ctrl);
+router.delete("/users/:id", isLogedIn, isAdmin, deleteCtrl);
+router.put("/users/:id/access", isLogedIn, isAdmin, updateUserAccessCtrl);
+router.get("/users/export", isLogedIn, isAdmin, exportUserDataCtrl);
 
-router.get("/get/:id", isLogedIn, isAdmin,get1Ctrl);
 
-router.delete("/delete/:id", isLogedIn, isAdmin, deleteCtrl);
+// Parent routes for managing child users
+// router.post("/children", isLogedIn, isParent, createChildUserCtrl);
+router.get("/children", isLogedIn, isParent, getChildUsersCtrl);
+// router.put("/children/:id", isLogedIn, isParent, updateChildUserCtrl);
+// router.delete("/children/:id", isLogedIn, isParent, deleteChildUserCtrl);
+
+// Activity tracking routes
+router.get("/users/:userId/activities", isLogedIn, getUserActivitiesCtrl);
 
 module.exports = router;

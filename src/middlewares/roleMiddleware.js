@@ -1,52 +1,175 @@
-// const { User } = require("../models");
-const { getUser } = require("../services/roleServies");
-const { validateToken } = require("../utils/authUtil");
+const jwt = require('jsonwebtoken');
+const clickhouseUserService = require('../services/clickhouseUserService');
+const clickhouseSubscriptionService = require('../services/clickhouseSubscriptionService');
+const dotenv = require('dotenv');
+dotenv.config();
 
-exports.authMiddleware = async (req, res, next) => {
+/**
+ * Authentication Middleware - Verify JWT Token
+ * 
+ * This middleware validates the JWT token and ensures user is authenticated
+ * Checks for valid token, user existence, and account status
+ * 
+ * Token can be provided via:
+ * - Authorization header: Bearer <token>
+ * - Session-ID header: <token>
+ * - Cookie: access_token=<token>
+ * 
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @param {Function} next - Express next middleware function
+ */
+const isLogedIn = async (req, res, next) => {
   try {
-    const decodedToken = validateToken(req);
-    // req.User = await User.findByPk(decodedToken.id);
+    // Extract token from multiple sources
+    let token = req.headers.authorization?.split(' ')[1] || 
+                req.headers['session-id'] || 
+                req.cookies.access_token;
+
+    if (!token) {
+      return res.status(401).json({ 
+        message: 'Access denied. No token provided.',
+        statusCode: 401 
+      });
+    }
+
+    // Verify JWT token
+    const decoded = jwt.verify(token, process.env.SECRET);
+    
+    // Check if user exists and is active using ClickHouse
+    const user = await clickhouseUserService.getUserById(decoded.id);
+    if (!user || !user.isActive) {
+      return res.status(401).json({ 
+        message: 'Invalid token or user not found.',
+        statusCode: 401 
+      });
+    }
+
+    // Check if user's email is verified
+    // if (!user.isVerified) {
+    //   return res.status(401).json({ 
+    //     message: 'Please verify your email before accessing this resource.',
+    //     statusCode: 401 
+    //   });
+    // }
+
+    // Attach user to request object for use in subsequent middleware/routes
+    req.user = user;
     next();
   } catch (error) {
-    console.error(error);
-    return res.status(401).json(error);
+    console.error('Authentication error:', error);
+    res.status(401).json({ 
+      message: 'Invalid token.',
+      statusCode: 401 
+    });
   }
 };
 
-exports.isLogedIn = async (req, res, next) => {
-  const jsonPayload = await validateToken(req);
-  if (!jsonPayload)
-    return res.status(403).send({ message: "token is invalid" });
-
-  req.body.data = jsonPayload;
+/**
+ * Admin Authorization Middleware
+ * 
+ * Ensures that only admin users can access certain routes
+ * Must be used after isLogedIn middleware
+ * 
+ * Admin privileges:
+ * - Full system access
+ * - User management
+ * - System configuration
+ * - Data uploads
+ * 
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @param {Function} next - Express next middleware function
+ */
+const isAdmin = (req, res, next) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ 
+      message: 'Access denied. Admin privileges required.',
+      statusCode: 403 
+    });
+  }
   next();
 };
 
-exports.isAdmin = async (req, res, next) => {
-  const payload = req.body.data;
-  const userData = await getUser(payload.email);
-
-  if (userData && userData.role === "admin") return next();
-
-  return res.status(401).send({ message: "you are not admin" });
+/**
+ * Parent Authorization Middleware
+ * 
+ * Ensures that only parent-level users can access certain routes
+ * Parent users are company accounts with subscription management
+ * 
+ * Parent privileges:
+ * - Company data access
+ * - Child account management
+ * - Subscription features
+ * - Data downloads
+ * 
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @param {Function} next - Express next middleware function
+ */
+const isParent = (req, res, next) => {
+  if (req.user.role !== 'parent' && req.user.role !== 'admin') {
+    return res.status(403).json({ 
+      message: 'Access denied. Parent-level access required.',
+      statusCode: 403 
+    });
+  }
+  next();
 };
 
-exports.isOperator = async (req, res, next) => {
-  const payload = req.body.data;
-  const userData = await getUser(payload.email);
-  if (userData && userData.role === "operator") {
-    return next();
-  }
+/**
+ * Active Subscription Middleware
+ * 
+ * Verifies that the user has an active subscription
+ * Required for premium features like data downloads
+ * 
+ * Checks:
+ * - Subscription exists
+ * - Subscription is active
+ * - Subscription hasn't expired
+ * 
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @param {Function} next - Express next middleware function
+ */
+const hasActiveSubscription = async (req, res, next) => {
+  try {
+    const subscription = await clickhouseSubscriptionService.getActiveSubscriptionByUserId(req.user.id);
 
-  return res.status(401).send({ message: "you are not operator or not login" });
+    if (!subscription) {
+      return res.status(403).json({ 
+        message: 'Access denied. Active subscription required.',
+        statusCode: 403 
+      });
+    }
+
+    // Check if subscription has expired
+    if (subscription.accessValidity && new Date() > new Date(subscription.accessValidity)) {
+      return res.status(403).json({ 
+        message: 'Access denied. Subscription has expired.',
+        statusCode: 403 
+      });
+    }
+
+    // Attach subscription to request for use in routes
+    req.subscription = subscription;
+    next();
+  } catch (error) {
+    console.error('Subscription check error:', error);
+    res.status(500).json({ 
+      message: 'Error checking subscription status.',
+      statusCode: 500 
+    });
+  }
 };
 
-exports.isUser = async (req, res, next) => {
-  const payload = req.body.data;
-  const userData = await getUser(payload.email);
-  if (userData && userData.role === "user") {
-    return next();
-  }
-
-  return res.status(401).send({ message: "you are not user or not login" });
+/**
+ * Combined middleware for common authentication patterns
+ * Usage: [isLogedIn, isParent, hasActiveSubscription]
+ */
+module.exports = {
+  isLogedIn,
+  isAdmin,
+  isParent,
+  hasActiveSubscription
 };
