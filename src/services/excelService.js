@@ -1,8 +1,5 @@
 const ExcelJS = require('exceljs');
 const fs = require('fs');
-const { Sequelize, Op } = require('sequelize');
-const sequelize = require('../config/db');
-const { ExportModel, ImportModel } = require('../models');
 const redis = require('../config/chached-config');
 const { queryModifier } = require('../utils/queryModifier');
 

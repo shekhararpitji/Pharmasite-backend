@@ -1,4 +1,3 @@
-const db = require("../config/db");
 const jwt = require('jsonwebtoken');
 
 const { validateToken } = require("../utils/authUtil");
