@@ -1,6 +1,6 @@
 const express = require("express");
 const upload = require('../middlewares/multerMiddleware')
-const { isLogedIn, isAdmin, isParent, hasActiveSubscription } = require("../middlewares/roleMiddleware");
+const { isLogedIn, isAdmin, isParent, hasActiveSubscription, canViewData, canDownloadData } = require("../middlewares/roleMiddleware");
 const {uploadExcel, getSuggestionValue, getHSCodes, downloadData} = require('../controllers/dataController');
 const { getDataMetrics, getData, getDataMetricsRawSQL } = require("../services/excelService");
 const clickhouseService = require('../services/clickhouseService');
@@ -46,7 +46,7 @@ router.post('/upload', isAdmin, upload.single('file'), uploadExcel);
  * 
  * This is a premium feature requiring paid subscription
  */
-router.get('/download', isParent, hasActiveSubscription, downloadData);
+router.get('/download', isLogedIn, canDownloadData('RAW'), downloadData);
 
 // =====================================
 // BASIC AUTHENTICATED ROUTES
@@ -67,7 +67,7 @@ router.get('/download', isParent, hasActiveSubscription, downloadData);
  * - Sorting options
  * - 10-100x faster than MySQL version
  */
-router.post('/records', clickhouseService.getDataFromClickHouse);
+router.post('/records', isLogedIn, canViewData, clickhouseService.getDataFromClickHouse);
 
 /**
  * Get Data Metrics (ClickHouse Version - High Performance)

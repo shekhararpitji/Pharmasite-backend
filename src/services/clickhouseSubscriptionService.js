@@ -92,9 +92,7 @@ const getSubscriptionById = async (subscriptionId) => {
 const createSubscription = async (subscriptionData) => {
   try {
     const {
-      clientName,
-      contactPerson,
-      email,
+      companyId,
       subscriptionExport,
       subscriptionImport,
       dataTypeRaw,
@@ -105,6 +103,10 @@ const createSubscription = async (subscriptionData) => {
       subscribedDurationDownload,
       subscribedDurationView,
       accessValidity,
+      viewStartDate,
+      viewEndDate,
+      downloadStartDate,
+      downloadEndDate,
       subscriptionCost,
       paymentMethod,
       paymentId,
@@ -137,24 +139,32 @@ const createSubscription = async (subscriptionData) => {
       ? new Date(accessValidity).toISOString().slice(0, 19).replace('T', ' ')
       : endDateStr;
 
+    // Calculate date ranges if not provided
+    const viewStart = viewStartDate ? new Date(viewStartDate).toISOString().slice(0, 19).replace('T', ' ') : startDateStr;
+    const viewEnd = viewEndDate ? new Date(viewEndDate).toISOString().slice(0, 19).replace('T', ' ') : endDateStr;
+    const downloadStart = downloadStartDate ? new Date(downloadStartDate).toISOString().slice(0, 19).replace('T', ' ') : startDateStr;
+    const downloadEnd = downloadEndDate ? new Date(downloadEndDate).toISOString().slice(0, 19).replace('T', ' ') : endDateStr;
+
     // Insert subscription
     await clickhouse.insert({
       table: `${DATABASE_NAME}.${TABLE_NAME}`,
       values: [{
         id: nextId,
-        clientName: clientName || '',
-        contactPerson: contactPerson || '',
-        email: email || '',
+        companyId: companyId || 0,
         subscriptionExport: subscriptionExport ? 1 : 0,
         subscriptionImport: subscriptionImport ? 1 : 0,
         dataTypeRaw: dataTypeRaw ? 1 : 0,
         dataTypeClean: dataTypeClean ? 1 : 0,
-        chapterNumber: Array.isArray(chapterNumber) ? chapterNumber.join(',') : '',
+        chapterNumber: Array.isArray(chapterNumber) ? JSON.stringify(chapterNumber) : (typeof chapterNumber === 'string' ? chapterNumber : '[]'),
         productCount: productCount || 0,
         productlimit: productlimit || 0,
         subscribedDurationDownload: subscribedDurationDownload || 0,
         subscribedDurationView: subscribedDurationView || 0,
         accessValidity: accessValidityStr,
+        viewStartDate: viewStart,
+        viewEndDate: viewEnd,
+        downloadStartDate: downloadStart,
+        downloadEndDate: downloadEnd,
         subscriptionExpiryNotification: subscriptionExpiryNotification || '',
         accessExpiryNotification: accessExpiryNotification || '',
         subscriptionCost: subscriptionCost || 0,
@@ -443,16 +453,20 @@ const getUserSubscription = async (userId) => {
 };
 
 /**
- * Get active subscription by user ID
+ * Get active subscription by company ID
  * Used by authentication middleware to check subscription status
  */
-const getActiveSubscriptionByUserId = async (userId) => {
+const getActiveSubscriptionByCompanyId = async (companyId) => {
   try {
+    if (!companyId) {
+      return null;
+    }
+
     const result = await clickhouse.query({
       query: `
         SELECT *
         FROM ${DATABASE_NAME}.${TABLE_NAME}
-        WHERE userId = ${userId}
+        WHERE companyId = ${companyId}
         AND status = 'active'
         ORDER BY updatedAt DESC, createdAt DESC
         LIMIT 1
@@ -462,6 +476,34 @@ const getActiveSubscriptionByUserId = async (userId) => {
 
     const subscriptions = await result.json();
     return subscriptions.length > 0 ? subscriptions[0] : null;
+  } catch (error) {
+    console.error('Error getting active subscription for company:', error);
+    throw error;
+  }
+};
+
+/**
+ * Get active subscription by user ID (for backward compatibility)
+ * Gets user's company and returns company's subscription
+ */
+const getActiveSubscriptionByUserId = async (userId) => {
+  try {
+    // Get user's company
+    const userResult = await clickhouse.query({
+      query: `
+        SELECT companyId FROM ${DATABASE_NAME}.users
+        WHERE id = '${userId}' OR userId = '${userId}'
+        LIMIT 1
+      `,
+      format: 'JSONEachRow'
+    });
+    const users = await userResult.json();
+    
+    if (users.length === 0 || !users[0].companyId) {
+      return null;
+    }
+
+    return await getActiveSubscriptionByCompanyId(users[0].companyId);
   } catch (error) {
     console.error('Error getting active subscription for user:', error);
     throw error;
@@ -476,7 +518,8 @@ module.exports = {
   deleteSubscription,
   assignSubscription,
   getUserSubscription,
-  getActiveSubscriptionByUserId
+  getActiveSubscriptionByUserId,
+  getActiveSubscriptionByCompanyId
 };
 
 

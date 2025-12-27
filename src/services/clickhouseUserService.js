@@ -25,7 +25,8 @@ const createUser = async (userData, createdById) => {
       password,
       role,
       parentId,
-      subscriptionId
+      subscriptionId,
+      companyId
     } = userData;
 
     // Hash password
@@ -54,6 +55,7 @@ const createUser = async (userData, createdById) => {
         parentId: parentId || 0,
         createdBy: createdById || 0,
         subscriptionId: subscriptionId || null,
+        companyId: companyId || null,
         isVerified: 0,
         verificationToken: verificationToken,
         verificationTokenExpiry: verificationTokenExpiry.toISOString().slice(0, 19).replace('T', ' '),
@@ -260,6 +262,9 @@ const getAllUsers = async (filters = {}) => {
     if (filters.parentId) {
       whereConditions.push(`parentId = '${filters.parentId}'`);
     }
+    if (filters.companyId) {
+      whereConditions.push(`companyId = ${filters.companyId}`);
+    }
     if (filters.isActive !== undefined) {
       whereConditions.push(`isActive = ${filters.isActive ? 1 : 0}`);
     }
@@ -276,7 +281,7 @@ const getAllUsers = async (filters = {}) => {
       query: `
         SELECT 
           id, partyName, name, email, mobileNumber, role, 
-          parentId, createdBy, subscriptionId, isVerified, isActive, lastLogin, 
+          parentId, createdBy, subscriptionId, companyId, isVerified, isActive, lastLogin, 
           createdAt, updatedAt
         FROM (
           SELECT *,

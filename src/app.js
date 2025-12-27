@@ -18,6 +18,11 @@ const { initClickHouseImport } = require('./models/clickhouse/import.model');
 const { initClickHouseUser } = require('./models/clickhouse/user.model');
 const { initClickHouseActivity } = require('./models/clickhouse/activity.model');
 const { initClickHouseSubscription } = require('./models/clickhouse/subscription.model');
+const { initClickHouseCompany } = require('./models/clickhouse/company.model');
+const { initClickHouseRole } = require('./models/clickhouse/role.model');
+const { initClickHousePermission } = require('./models/clickhouse/permission.model');
+const { initClickHouseRolePermission } = require('./models/clickhouse/rolePermission.model');
+const { initClickHouseUserPermission } = require('./models/clickhouse/userPermission.model');
 
 // Load environment variables from .env file
 dotenv.config();
@@ -55,6 +60,8 @@ app.use('/api/data', dataRoutes);                    // Data operations & analyt
 app.use('/api/clickhouse-metrics', clickhouseMetricsRoutes); // ClickHouse analytics
 app.use('/api/subscription', subscriptionRoutes);     // Subscription management
 app.use('/api/analytics', analyticsRoutes);          // ClickHouse-based user/subscription/activity analytics
+app.use('/api/admin', require('./routes/adminRoutes')); // Admin routes
+app.use('/api/parent', require('./routes/parentRoutes')); // Parent routes
 
 // Global error handler
 app.use((err, req, res, next) => {
@@ -95,6 +102,11 @@ const startServer = async () => {
           await initClickHouseUser();
           await initClickHouseActivity();
           await initClickHouseSubscription();
+          await initClickHouseCompany();
+          await initClickHouseRole();
+          await initClickHousePermission();
+          await initClickHouseRolePermission();
+          await initClickHouseUserPermission();
           console.log('ClickHouse tables and views initialized');
         } else {
           console.warn('ClickHouse connection failed, analytics will use MySQL');

@@ -10,9 +10,7 @@ async function initClickHouseSubscription() {
       query: `
         CREATE TABLE IF NOT EXISTS ${DATABASE_NAME}.${TABLE_NAME} (
           id UInt32,
-          clientName String,
-          contactPerson String,
-          email String,
+          companyId UInt32,
           subscriptionExport UInt8,
           subscriptionImport UInt8,
           dataTypeRaw UInt8,
@@ -23,6 +21,10 @@ async function initClickHouseSubscription() {
           subscribedDurationDownload Nullable(UInt32),
           subscribedDurationView Nullable(UInt32),
           accessValidity Nullable(DateTime),
+          viewStartDate Nullable(DateTime),
+          viewEndDate Nullable(DateTime),
+          downloadStartDate Nullable(DateTime),
+          downloadEndDate Nullable(DateTime),
           subscriptionExpiryNotification Nullable(String),
           accessExpiryNotification Nullable(String),
           subscriptionCost Decimal64(2),
@@ -41,6 +43,41 @@ async function initClickHouseSubscription() {
         SETTINGS index_granularity = 8192
       `
     });
+    
+    // Add companyId and date range columns if they don't exist (for existing tables)
+    try {
+      const tableInfo = await clickhouse.query({
+        query: `DESCRIBE TABLE ${DATABASE_NAME}.${TABLE_NAME}`,
+        format: 'JSONEachRow'
+      });
+      const columns = await tableInfo.json();
+      const columnNames = columns.map(col => col.name);
+      
+      if (!columnNames.includes('companyId')) {
+        await clickhouse.command({
+          query: `
+            ALTER TABLE ${DATABASE_NAME}.${TABLE_NAME}
+            ADD COLUMN companyId UInt32 DEFAULT 0
+          `
+        });
+        console.log('companyId column added to subscriptions table');
+      }
+      
+      if (!columnNames.includes('viewStartDate')) {
+        await clickhouse.command({
+          query: `
+            ALTER TABLE ${DATABASE_NAME}.${TABLE_NAME}
+            ADD COLUMN viewStartDate Nullable(DateTime),
+            ADD COLUMN viewEndDate Nullable(DateTime),
+            ADD COLUMN downloadStartDate Nullable(DateTime),
+            ADD COLUMN downloadEndDate Nullable(DateTime)
+          `
+        });
+        console.log('Date range columns added to subscriptions table');
+      }
+    } catch (alterError) {
+      console.warn('Note: Could not check/add columns:', alterError.message);
+    }
     
     console.log('subscriptions table created successfully in ClickHouse');
     return true;

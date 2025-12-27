@@ -1,6 +1,8 @@
 const jwt = require('jsonwebtoken');
 const clickhouseUserService = require('../services/clickhouseUserService');
 const clickhouseSubscriptionService = require('../services/clickhouseSubscriptionService');
+const clickhouseRbacService = require('../services/clickhouseRbacService');
+const subscriptionValidationService = require('../services/subscriptionValidationService');
 const dotenv = require('dotenv');
 dotenv.config();
 
@@ -82,7 +84,8 @@ const isLogedIn = async (req, res, next) => {
  * @param {Function} next - Express next middleware function
  */
 const isAdmin = (req, res, next) => {
-  if (req.user.role !== 'admin') {
+  const userRole = req.user.role?.toUpperCase() || req.user.role;
+  if (userRole !== 'ADMIN' && userRole !== 'admin') {
     return res.status(403).json({ 
       message: 'Access denied. Admin privileges required.',
       statusCode: 403 
@@ -108,7 +111,8 @@ const isAdmin = (req, res, next) => {
  * @param {Function} next - Express next middleware function
  */
 const isParent = (req, res, next) => {
-  if (req.user.role !== 'parent' && req.user.role !== 'admin') {
+  const userRole = req.user.role?.toUpperCase() || req.user.role;
+  if (userRole !== 'PARENT' && userRole !== 'parent' && userRole !== 'ADMIN' && userRole !== 'admin') {
     return res.status(403).json({ 
       message: 'Access denied. Parent-level access required.',
       statusCode: 403 
@@ -134,7 +138,8 @@ const isParent = (req, res, next) => {
  */
 const hasActiveSubscription = async (req, res, next) => {
   try {
-    const subscription = await clickhouseSubscriptionService.getActiveSubscriptionByUserId(req.user.id);
+    // Get effective subscription (handles child users getting parent's subscription)
+    const subscription = await subscriptionValidationService.getEffectiveSubscription(req.user);
 
     if (!subscription) {
       return res.status(403).json({ 
@@ -145,6 +150,13 @@ const hasActiveSubscription = async (req, res, next) => {
 
     // Check if subscription has expired
     if (subscription.accessValidity && new Date() > new Date(subscription.accessValidity)) {
+      return res.status(403).json({ 
+        message: 'Access denied. Subscription has expired.',
+        statusCode: 403 
+      });
+    }
+
+    if (subscription.endDate && new Date() > new Date(subscription.endDate)) {
       return res.status(403).json({ 
         message: 'Access denied. Subscription has expired.',
         statusCode: 403 
@@ -164,6 +176,233 @@ const hasActiveSubscription = async (req, res, next) => {
 };
 
 /**
+ * Resolve user's role with permissions
+ */
+const resolveUserRole = async (req, res, next) => {
+  try {
+    const roleData = await clickhouseRbacService.getUserRolePermissions(req.user.id || req.user.userId);
+    req.userRole = roleData;
+    next();
+  } catch (error) {
+    console.error('Error resolving user role:', error);
+    next(); // Continue even if role resolution fails
+  }
+};
+
+/**
+ * Resolve company subscription
+ */
+const resolveCompanySubscription = async (req, res, next) => {
+  try {
+    const subscription = await subscriptionValidationService.getEffectiveSubscription(req.user);
+    req.subscription = subscription;
+    next();
+  } catch (error) {
+    console.error('Error resolving company subscription:', error);
+    next(); // Continue even if subscription resolution fails
+  }
+};
+
+/**
+ * Check if user has a specific permission
+ */
+const checkPermission = (permissionName) => {
+  return async (req, res, next) => {
+    try {
+      // Admin bypasses all permission checks
+      const userRole = req.user.role?.toUpperCase() || req.user.role;
+      if (userRole === 'ADMIN' || userRole === 'admin') {
+        return next();
+      }
+
+      const hasPerm = await clickhouseRbacService.hasPermission(
+        req.user.id || req.user.userId,
+        permissionName
+      );
+
+      if (!hasPerm) {
+        return res.status(403).json({ 
+          message: `Access denied. Permission '${permissionName}' required.`,
+          statusCode: 403 
+        });
+      }
+
+      next();
+    } catch (error) {
+      console.error('Permission check error:', error);
+      res.status(500).json({ 
+        message: 'Error checking permission.',
+        statusCode: 500 
+      });
+    }
+  };
+};
+
+/**
+ * Validate subscription access for data operations
+ */
+const validateSubscriptionAccess = (dataType, tradeType, action) => {
+  return async (req, res, next) => {
+    try {
+      // Admin bypasses all checks
+      const userRole = req.user.role?.toUpperCase() || req.user.role;
+      if (userRole === 'ADMIN' || userRole === 'admin') {
+        return next();
+      }
+
+      const dateRange = {
+        startDate: req.query.startDate || req.body.startDate,
+        endDate: req.query.endDate || req.body.endDate,
+        date: req.query.date || req.body.date,
+        chapter: req.query.chapter || req.body.chapter,
+        productCount: req.query.productCount || req.body.productCount
+      };
+
+      const validation = await subscriptionValidationService.validateSubscriptionAccess(
+        req.user,
+        dataType,
+        tradeType,
+        action,
+        dateRange
+      );
+
+      if (!validation.allowed) {
+        return res.status(403).json({ 
+          message: validation.reason || 'Access denied. Subscription validation failed.',
+          statusCode: 403 
+        });
+      }
+
+      req.subscription = validation.subscription;
+      next();
+    } catch (error) {
+      console.error('Subscription validation error:', error);
+      res.status(500).json({ 
+        message: 'Error validating subscription access.',
+        statusCode: 500 
+      });
+    }
+  };
+};
+
+/**
+ * Check if user can view data
+ */
+const canViewData = async (req, res, next) => {
+  try {
+    // Admin bypasses
+    const userRole = req.user.role?.toUpperCase() || req.user.role;
+    if (userRole === 'ADMIN' || userRole === 'admin') {
+      return next();
+    }
+
+    // Check VIEW_DATA permission
+    const hasPerm = await clickhouseRbacService.hasPermission(
+      req.user.id || req.user.userId,
+      'VIEW_DATA'
+    );
+
+    if (!hasPerm) {
+      return res.status(403).json({ 
+        message: 'Access denied. VIEW_DATA permission required.',
+        statusCode: 403 
+      });
+    }
+
+    // Validate subscription for view access
+    const dateRange = {
+      startDate: req.query.startDate || req.body.startDate,
+      date: req.query.date || req.body.date
+    };
+
+    const validation = await subscriptionValidationService.validateSubscriptionAccess(
+      req.user,
+      req.query.dataType || req.body.dataType || 'RAW',
+      req.query.tradeType || req.body.tradeType || 'E',
+      'view',
+      dateRange
+    );
+
+    if (!validation.allowed) {
+      return res.status(403).json({ 
+        message: validation.reason || 'Access denied. Subscription validation failed.',
+        statusCode: 403 
+      });
+    }
+
+    req.subscription = validation.subscription;
+    next();
+  } catch (error) {
+    console.error('View data check error:', error);
+    res.status(500).json({ 
+      message: 'Error checking view data access.',
+      statusCode: 500 
+    });
+  }
+};
+
+/**
+ * Check if user can download data
+ */
+const canDownloadData = (dataType) => {
+  return async (req, res, next) => {
+    try {
+      // Admin bypasses
+      const userRole = req.user.role?.toUpperCase() || req.user.role;
+      if (userRole === 'ADMIN' || userRole === 'admin') {
+        return next();
+      }
+
+      // Check download permission based on data type
+      const permissionName = dataType === 'CLEAN' ? 'DOWNLOAD_CLEAN' : 'DOWNLOAD_RAW';
+      const hasPerm = await clickhouseRbacService.hasPermission(
+        req.user.id || req.user.userId,
+        permissionName
+      );
+
+      if (!hasPerm) {
+        return res.status(403).json({ 
+          message: `Access denied. ${permissionName} permission required.`,
+          statusCode: 403 
+        });
+      }
+
+      // Validate subscription for download access
+      const dateRange = {
+        startDate: req.query.startDate || req.body.startDate,
+        date: req.query.date || req.body.date,
+        chapter: req.query.chapter || req.body.chapter,
+        productCount: req.query.productCount || req.body.productCount
+      };
+
+      const validation = await subscriptionValidationService.validateSubscriptionAccess(
+        req.user,
+        dataType,
+        req.query.tradeType || req.body.tradeType || 'E',
+        'download',
+        dateRange
+      );
+
+      if (!validation.allowed) {
+        return res.status(403).json({ 
+          message: validation.reason || 'Access denied. Subscription validation failed.',
+          statusCode: 403 
+        });
+      }
+
+      req.subscription = validation.subscription;
+      next();
+    } catch (error) {
+      console.error('Download data check error:', error);
+      res.status(500).json({ 
+        message: 'Error checking download data access.',
+        statusCode: 500 
+      });
+    }
+  };
+};
+
+/**
  * Combined middleware for common authentication patterns
  * Usage: [isLogedIn, isParent, hasActiveSubscription]
  */
@@ -171,5 +410,11 @@ module.exports = {
   isLogedIn,
   isAdmin,
   isParent,
-  hasActiveSubscription
+  hasActiveSubscription,
+  resolveUserRole,
+  resolveCompanySubscription,
+  checkPermission,
+  validateSubscriptionAccess,
+  canViewData,
+  canDownloadData
 };
