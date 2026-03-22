@@ -180,7 +180,7 @@ const hasActiveSubscription = async (req, res, next) => {
  */
 const resolveUserRole = async (req, res, next) => {
   try {
-    const roleData = await clickhouseRbacService.getUserRolePermissions(req.user.id || req.user.userId);
+    const roleData = await clickhouseRbacService.getUserRolePermissions(req.user.id);
     req.userRole = roleData;
     next();
   } catch (error) {
@@ -216,7 +216,7 @@ const checkPermission = (permissionName) => {
       }
 
       const hasPerm = await clickhouseRbacService.hasPermission(
-        req.user.id || req.user.userId,
+        req.user.id,
         permissionName
       );
 
@@ -298,7 +298,7 @@ const canViewData = async (req, res, next) => {
 
     // Check VIEW_DATA permission
     const hasPerm = await clickhouseRbacService.hasPermission(
-      req.user.id || req.user.userId,
+      req.user.id,
       'VIEW_DATA'
     );
 
@@ -356,7 +356,7 @@ const canDownloadData = (dataType) => {
       // Check download permission based on data type
       const permissionName = dataType === 'CLEAN' ? 'DOWNLOAD_CLEAN' : 'DOWNLOAD_RAW';
       const hasPerm = await clickhouseRbacService.hasPermission(
-        req.user.id || req.user.userId,
+        req.user.id,
         permissionName
       );
 

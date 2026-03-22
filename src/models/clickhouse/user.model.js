@@ -31,7 +31,7 @@ async function initClickHouseUser() {
           updatedAt DateTime
         ) 
         ENGINE = MergeTree()
-        ORDER BY (id, email)
+        ORDER BY (id)
         PARTITION BY toYYYYMM(createdAt)
         SETTINGS index_granularity = 8192
       `

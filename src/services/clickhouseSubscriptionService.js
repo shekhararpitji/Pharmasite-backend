@@ -379,12 +379,11 @@ const assignSubscription = async (userId, subscriptionId) => {
       throw new Error('Subscription not found');
     }
 
-    // Get user
     const userResult = await clickhouse.query({
       query: `
         SELECT *
         FROM ${DATABASE_NAME}.users
-        WHERE id = ${userId}
+        WHERE id = ${parseInt(userId)}
         ORDER BY updatedAt DESC, createdAt DESC
         LIMIT 1
       `,
@@ -398,21 +397,19 @@ const assignSubscription = async (userId, subscriptionId) => {
 
     const user = users[0];
 
-    // Check if user is a parent user
     if (user.role !== 'parent') {
       throw new Error('Only parent users can be assigned subscriptions');
     }
 
-    // Update user with subscription ID using ALTER TABLE UPDATE
     const now = new Date().toISOString().slice(0, 19).replace('T', ' ');
-    
+
     await clickhouse.command({
       query: `
         ALTER TABLE ${DATABASE_NAME}.users
         UPDATE 
           subscriptionId = ${subscriptionId},
           updatedAt = '${now.replace(/'/g, "''")}'
-        WHERE id = '${userId.replace(/'/g, "''")}'
+        WHERE id = ${parseInt(userId)}
       `
     });
 
@@ -437,7 +434,7 @@ const getUserSubscription = async (userId) => {
         SELECT u.subscriptionId, s.*
         FROM ${DATABASE_NAME}.users u
         LEFT JOIN ${DATABASE_NAME}.subscriptions s ON u.subscriptionId = s.id
-        WHERE u.id = ${userId}
+        WHERE u.id = ${parseInt(userId)}
         ORDER BY u.updatedAt DESC, u.createdAt DESC
         LIMIT 1
       `,
@@ -492,7 +489,7 @@ const getActiveSubscriptionByUserId = async (userId) => {
     const userResult = await clickhouse.query({
       query: `
         SELECT companyId FROM ${DATABASE_NAME}.users
-        WHERE id = '${userId}' OR userId = '${userId}'
+        WHERE id = ${parseInt(userId)}
         LIMIT 1
       `,
       format: 'JSONEachRow'

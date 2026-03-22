@@ -17,7 +17,7 @@ router.post('/children', isLogedIn, isParent, async (req, res) => {
     const childData = {
       ...req.body,
       role: 'CHILD',
-      parentId: req.user.id || req.user.userId,
+      parentId: req.user.id,
       companyId: req.user.companyId
     };
     const child = await clickhouseUserService.createUser(childData, req.user.id);
@@ -36,7 +36,7 @@ router.post('/children', isLogedIn, isParent, async (req, res) => {
 
 router.get('/children', isLogedIn, isParent, async (req, res) => {
   try {
-    const parentId = req.user.id || req.user.userId;
+    const parentId = req.user.id;
     const children = await clickhouseUserService.getAllUsers({
       ...req.query,
       parentId,
@@ -56,7 +56,7 @@ router.get('/children', isLogedIn, isParent, async (req, res) => {
 
 router.put('/children/:id', isLogedIn, isParent, async (req, res) => {
   try {
-    const parentId = req.user.id || req.user.userId;
+    const parentId = req.user.id;
     // Verify child belongs to this parent
     const child = await clickhouseUserService.getUserById(req.params.id);
     if (!child || child.parentId !== parentId) {
@@ -114,7 +114,7 @@ router.get('/subscription', isLogedIn, isParent, async (req, res) => {
 // Child Permission Management
 router.get('/children/:childId/permissions', isLogedIn, isParent, async (req, res) => {
   try {
-    const parentId = req.user.id || req.user.userId;
+    const parentId = req.user.id;
     // Verify child belongs to this parent
     const child = await clickhouseUserService.getUserById(req.params.childId);
     if (!child || child.parentId !== parentId) {
@@ -139,7 +139,7 @@ router.get('/children/:childId/permissions', isLogedIn, isParent, async (req, re
 
 router.post('/children/:childId/permissions', isLogedIn, isParent, async (req, res) => {
   try {
-    const parentId = req.user.id || req.user.userId;
+    const parentId = req.user.id;
     // Verify child belongs to this parent
     const child = await clickhouseUserService.getUserById(req.params.childId);
     if (!child || child.parentId !== parentId) {
@@ -177,7 +177,7 @@ router.post('/children/:childId/permissions', isLogedIn, isParent, async (req, r
 
 router.post('/children/:childId/permissions/bulk', isLogedIn, isParent, async (req, res) => {
   try {
-    const parentId = req.user.id || req.user.userId;
+    const parentId = req.user.id;
     // Verify child belongs to this parent
     const child = await clickhouseUserService.getUserById(req.params.childId);
     if (!child || child.parentId !== parentId) {
@@ -225,7 +225,7 @@ router.post('/children/:childId/permissions/bulk', isLogedIn, isParent, async (r
 
 router.put('/children/:childId/permissions/:permissionId', isLogedIn, isParent, async (req, res) => {
   try {
-    const parentId = req.user.id || req.user.userId;
+    const parentId = req.user.id;
     // Verify child belongs to this parent
     const child = await clickhouseUserService.getUserById(req.params.childId);
     if (!child || child.parentId !== parentId) {
@@ -263,7 +263,7 @@ router.put('/children/:childId/permissions/:permissionId', isLogedIn, isParent, 
 
 router.delete('/children/:childId/permissions/:permissionId', isLogedIn, isParent, async (req, res) => {
   try {
-    const parentId = req.user.id || req.user.userId;
+    const parentId = req.user.id;
     // Verify child belongs to this parent
     const child = await clickhouseUserService.getUserById(req.params.childId);
     if (!child || child.parentId !== parentId) {

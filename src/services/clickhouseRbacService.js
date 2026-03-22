@@ -16,7 +16,7 @@ const getUserRolePermissions = async (userId) => {
     const userResult = await clickhouse.query({
       query: `
         SELECT role FROM ${DATABASE_NAME}.users
-        WHERE id = '${userId}' OR userId = '${userId}'
+        WHERE id = ${parseInt(userId)}
         LIMIT 1
       `,
       format: 'JSONEachRow'
@@ -26,7 +26,6 @@ const getUserRolePermissions = async (userId) => {
     
     const userRole = users[0].role;
     
-    // Get role ID
     const roleResult = await clickhouse.query({
       query: `
         SELECT id FROM ${DATABASE_NAME}.roles
@@ -40,7 +39,6 @@ const getUserRolePermissions = async (userId) => {
     
     const roleId = roles[0].id;
     
-    // Get role permissions
     const permResult = await clickhouse.query({
       query: `
         SELECT p.id, p.name, p.description, p.resource
@@ -53,7 +51,6 @@ const getUserRolePermissions = async (userId) => {
     
     const rolePermissions = await permResult.json();
     
-    // Get user-specific permissions
     const userPermResult = await clickhouse.query({
       query: `
         SELECT p.id, p.name, p.description, p.resource, up.granted
@@ -87,7 +84,7 @@ const hasPermission = async (userId, permissionName) => {
     const userResult = await clickhouse.query({
       query: `
         SELECT role FROM ${DATABASE_NAME}.users
-        WHERE id = '${userId}' OR userId = '${userId}'
+        WHERE id = ${parseInt(userId)}
         LIMIT 1
       `,
       format: 'JSONEachRow'

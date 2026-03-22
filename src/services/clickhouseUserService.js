@@ -8,11 +8,6 @@ const DATABASE_NAME = process.env.CLICKHOUSE_DB || 'pharma_analytics';
 const TABLE_NAME = 'users';
 
 /**
- * ClickHouse User Service
- * Handles all user-related operations using ClickHouse instead of MySQL
- */
-
-/**
  * Create a new user in ClickHouse
  */
 const createUser = async (userData, createdById) => {
@@ -29,47 +24,52 @@ const createUser = async (userData, createdById) => {
       companyId
     } = userData;
 
-    // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
-    
-    // Generate verification token
-    const verificationToken = crypto.randomBytes(32).toString('hex');
-    const verificationTokenExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
 
-    // Generate unique user ID using UUID v4
-    const id = uuidv4();
-    
+    const verificationToken = crypto.randomBytes(32).toString('hex');
+    const verificationTokenExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+    const userId = uuidv4();
     const now = new Date().toISOString().slice(0, 19).replace('T', ' ');
 
-    // Insert user into ClickHouse
+    const idResult = await clickhouse.query({
+      query: `SELECT coalesce(max(id), 0) + 1 AS nextId FROM ${DATABASE_NAME}.${TABLE_NAME}`,
+      format: 'JSONEachRow'
+    });
+    const idRows = await idResult.json();
+    const nextId = idRows[0]?.nextId ?? 1;
+
+    const row = {
+      id: nextId,
+      userId,
+      partyName: String(partyName || ''),
+      name: String(name),
+      email: String(email),
+      mobileNumber: String(mobileNumber || ''),
+      password: String(hashedPassword),
+      role: String(role),
+      parentId: typeof parentId === 'number' ? parentId : 0,
+      createdBy: typeof createdById === 'number' ? createdById : 0,
+      subscriptionId: subscriptionId ?? null,
+      companyId: companyId ?? null,
+      isVerified: 0,
+      verificationToken: String(verificationToken),
+      verificationTokenExpiry: verificationTokenExpiry.toISOString().slice(0, 19).replace('T', ' '),
+      isActive: 1,
+      lastLogin: '1970-01-01 00:00:00',
+      sessionId: '',
+      createdAt: now,
+      updatedAt: now
+    };
+
     await clickhouse.insert({
       table: `${DATABASE_NAME}.${TABLE_NAME}`,
-      values: [{
-        id: id,
-        partyName: partyName || '',
-        name: name,
-        email: email,
-        mobileNumber: mobileNumber || '',
-        password: hashedPassword,
-        role: role,
-        parentId: parentId || 0,
-        createdBy: createdById || 0,
-        subscriptionId: subscriptionId || null,
-        companyId: companyId || null,
-        isVerified: 0,
-        verificationToken: verificationToken,
-        verificationTokenExpiry: verificationTokenExpiry.toISOString().slice(0, 19).replace('T', ' '),
-        isActive: 1,
-        lastLogin: '1970-01-01 00:00:00',
-        sessionId: '',
-        createdAt: now,
-        updatedAt: now
-      }],
+      values: [row],
       format: 'JSONEachRow'
     });
 
     return {
-      id: id,
+      id: nextId,
       name,
       email,
       role,
@@ -106,7 +106,7 @@ const getUserByEmail = async (email) => {
 };
 
 /**
- * Get user by ID from ClickHouse
+ * Get user by numeric ID from ClickHouse
  */
 const getUserById = async (id) => {
   try {
@@ -114,7 +114,7 @@ const getUserById = async (id) => {
       query: `
         SELECT *
         FROM ${DATABASE_NAME}.${TABLE_NAME}
-        WHERE id = '${id}'
+        WHERE id = ${parseInt(id)}
         ORDER BY updatedAt DESC, createdAt DESC
         LIMIT 1
       `,
@@ -134,7 +134,6 @@ const getUserById = async (id) => {
  */
 const verifyEmail = async (token) => {
   try {
-    // ClickHouse doesn't support UPDATE, so we need to fetch the user first
     const result = await clickhouse.query({
       query: `
         SELECT *
@@ -152,13 +151,11 @@ const verifyEmail = async (token) => {
     }
 
     const user = users[0];
-    
-    // Check if token is expired
+
     if (new Date(user.verificationTokenExpiry) < new Date()) {
       throw new Error('Verification token has expired');
     }
 
-    // Update user record using ALTER TABLE UPDATE
     const now = new Date().toISOString().slice(0, 19).replace('T', ' ');
     await clickhouse.command({
       query: `
@@ -167,7 +164,7 @@ const verifyEmail = async (token) => {
           isVerified = 1,
           verificationToken = '',
           updatedAt = '${now.replace(/'/g, "''")}'
-        WHERE id = '${user.id.replace(/'/g, "''")}'
+        WHERE id = ${user.id}
       `
     });
 
@@ -184,31 +181,24 @@ const verifyEmail = async (token) => {
 const login = async (email, password, ipAddress, userAgent) => {
   try {
     const user = await getUserByEmail(email);
-    
+
     if (!user) {
       throw new Error('User not found');
     }
-
-    // if (!user.isVerified) {
-    //   throw new Error('Please verify your email before logging in');
-    // }
 
     if (!user.isActive) {
       throw new Error('Your account has been deactivated');
     }
 
-    // Verify password
     const isPasswordValid = await bcrypt.compare(password, user.password);
     if (!isPasswordValid) {
       throw new Error('Invalid password');
     }
 
-    // Generate session ID
     const sessionId = crypto.randomBytes(32).toString('hex');
-    
-    // Generate JWT token
+
     const access_token = jwt.sign(
-      { 
+      {
         id: user.id,
         email: user.email,
         role: user.role,
@@ -218,9 +208,7 @@ const login = async (email, password, ipAddress, userAgent) => {
       { expiresIn: '7d' }
     );
 
-    // Update last login and session using ALTER TABLE UPDATE
     const now = new Date().toISOString().slice(0, 19).replace('T', ' ');
-    
     await clickhouse.command({
       query: `
         ALTER TABLE ${DATABASE_NAME}.${TABLE_NAME}
@@ -228,7 +216,7 @@ const login = async (email, password, ipAddress, userAgent) => {
           lastLogin = '${now.replace(/'/g, "''")}',
           sessionId = '${sessionId.replace(/'/g, "''")}',
           updatedAt = '${now.replace(/'/g, "''")}'
-        WHERE id = '${user.id.replace(/'/g, "''")}'
+        WHERE id = ${user.id}
       `
     });
 
@@ -255,12 +243,12 @@ const login = async (email, password, ipAddress, userAgent) => {
 const getAllUsers = async (filters = {}) => {
   try {
     let whereConditions = [];
-    
+
     if (filters.role) {
       whereConditions.push(`role = '${filters.role}'`);
     }
     if (filters.parentId) {
-      whereConditions.push(`parentId = '${filters.parentId}'`);
+      whereConditions.push(`parentId = ${parseInt(filters.parentId)}`);
     }
     if (filters.companyId) {
       whereConditions.push(`companyId = ${filters.companyId}`);
@@ -272,15 +260,14 @@ const getAllUsers = async (filters = {}) => {
       whereConditions.push(`isVerified = ${filters.isVerified ? 1 : 0}`);
     }
 
-    const whereClause = whereConditions.length > 0 
-      ? `WHERE ${whereConditions.join(' AND ')}` 
+    const whereClause = whereConditions.length > 0
+      ? `WHERE ${whereConditions.join(' AND ')}`
       : '';
 
-    // Get only the latest version of each user (by updatedAt)
     const result = await clickhouse.query({
       query: `
         SELECT 
-          id, partyName, name, email, mobileNumber, role, 
+          id, userId, partyName, name, email, mobileNumber, role, 
           parentId, createdBy, subscriptionId, companyId, isVerified, isActive, lastLogin, 
           createdAt, updatedAt
         FROM (
@@ -308,21 +295,20 @@ const getAllUsers = async (filters = {}) => {
 const updateUserAccess = async (userId, isActive) => {
   try {
     const user = await getUserById(userId);
-    
+
     if (!user) {
       throw new Error('User not found');
     }
 
     const now = new Date().toISOString().slice(0, 19).replace('T', ' ');
-    
-    // Update user record using ALTER TABLE UPDATE
+
     await clickhouse.command({
       query: `
         ALTER TABLE ${DATABASE_NAME}.${TABLE_NAME}
         UPDATE 
           isActive = ${isActive ? 1 : 0},
           updatedAt = '${now.replace(/'/g, "''")}'
-        WHERE id = '${userId.replace(/'/g, "''")}'
+        WHERE id = ${parseInt(userId)}
       `
     });
 
@@ -339,28 +325,27 @@ const updateUserAccess = async (userId, isActive) => {
 const updateUser = async (userId, updateData) => {
   try {
     const user = await getUserById(userId);
-    
+
     if (!user) {
       throw new Error('User not found');
     }
 
     const now = new Date().toISOString().slice(0, 19).replace('T', ' ');
-    
-    // Prepare updated user data
+
     const updatedUser = {
       ...user,
       ...updateData,
       updatedAt: now
     };
 
-    // Don't allow updating certain fields
     delete updatedUser.id;
+    delete updatedUser.userId;
     delete updatedUser.createdAt;
 
-    // Build UPDATE statement dynamically
     const updateFields = [];
+    const protectedKeys = ['id', 'userId', 'createdAt'];
     Object.keys(updateData).forEach(key => {
-      if (key !== 'id' && key !== 'createdAt') {
+      if (!protectedKeys.includes(key)) {
         const value = updateData[key];
         if (value === null || value === undefined) {
           updateFields.push(`${key} = NULL`);
@@ -375,16 +360,15 @@ const updateUser = async (userId, updateData) => {
     });
     updateFields.push(`updatedAt = '${now}'`);
 
-    // Update user record using ALTER TABLE UPDATE
     await clickhouse.command({
       query: `
         ALTER TABLE ${DATABASE_NAME}.${TABLE_NAME}
         UPDATE ${updateFields.join(', ')}
-        WHERE id = '${userId.replace(/'/g, "''")}'
+        WHERE id = ${parseInt(userId)}
       `
     });
 
-    return updatedUser;
+    return { ...updatedUser, id: user.id };
   } catch (error) {
     console.error('Error updating user:', error);
     throw error;
@@ -409,17 +393,16 @@ const deleteUser = async (userId) => {
 const getUserActivities = async (userId, requestingUserId) => {
   try {
     const user = await getUserById(userId);
-    
+
     if (!user) {
       throw new Error('User not found');
     }
 
-    // Get activities from activities table
     const result = await clickhouse.query({
       query: `
         SELECT *
         FROM ${DATABASE_NAME}.activities
-        WHERE userId = ${userId}
+        WHERE userId = ${parseInt(userId)}
         ORDER BY createdAt DESC
         LIMIT 100
       `,
@@ -459,4 +442,3 @@ module.exports = {
   getUserActivities,
   exportUserData
 };
-

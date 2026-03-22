@@ -31,7 +31,7 @@ const app = express();
 
 // CORS configuration - Allow cross-origin requests from frontend
 app.use(cors({
-  origin: ['http://13.204.96.11:5173', 'http://localhost:5173'],
+  origin: ['http://89.167.123.56:5173', 'http://localhost:5173'],
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   credentials: true
 }));

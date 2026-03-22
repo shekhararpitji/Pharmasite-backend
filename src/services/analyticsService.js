@@ -207,7 +207,7 @@ exports.getActivityAnalytics = async (filters = {}) => {
       whereClause += ` AND activityType = '${activityType}'`;
     }
     if (userId) {
-      whereClause += ` AND userId = ${userId}`;
+      whereClause += ` AND userId = ${parseInt(userId)}`;
     }
 
     // Activity by type
@@ -313,7 +313,7 @@ exports.getUserActivitiesFromClickHouse = async (userId, limit = 100, offset = 0
           createdAt,
           updatedAt
         FROM ${DATABASE_NAME}.activities
-        WHERE userId = ${userId}
+        WHERE userId = ${parseInt(userId)}
         ORDER BY createdAt DESC
         LIMIT ${limit} OFFSET ${offset}
       `,
